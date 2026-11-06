@@ -1,0 +1,22 @@
+# Generates and extends the PGP key for signing release artifacts.
+# See https://github.com/vlsi/provision-release-pgp-key
+name: PGP Key Maintenance
+
+on:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  pgp-key-maintenance:
+    name: PGP key maintenance
+    # Use digest pinning for security, and review the workflow before updating the pin
+    uses: vlsi/provision-release-pgp-key/.github/workflows/pgp-key-maintenance.yaml@7c6e3c4eb82ecdd18d1959f3f1a41af9ea0aac0e # v1.0.0
+    secrets:
+      RELEASE_PGP_SECRET_UPDATE_TOKEN: ${{ secrets.RELEASE_PGP_SECRET_UPDATE_TOKEN }}
+      RELEASE_PGP_PRIVATE_KEY: ${{ secrets.RELEASE_PGP_PRIVATE_KEY }}
+      RELEASE_PGP_PASSPHRASE: ${{ secrets.RELEASE_PGP_PASSPHRASE }}
+    with:
+      key-name: cribro releases
+      key-email: sitnikov.vladimir@gmail.com
+      key-lifetime: 1825
