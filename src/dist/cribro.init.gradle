@@ -1,0 +1,13 @@
+// Adds diffCoverage, changedLines, and pitestDiff to every Java project of a build that knows
+// nothing about them:
+//   ./gradlew --init-script /path/to/cribro.init.gradle :module:test
+// The plugin jar is read from the directory that holds this script.
+initscript {
+    dependencies {
+        classpath files(new File(getSourceFile().parentFile, "cribro.jar"))
+    }
+}
+
+allprojects {
+    apply plugin: io.github.cribrodev.CribroPlugin
+}
