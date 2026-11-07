@@ -1,6 +1,6 @@
 plugins {
     `java-gradle-plugin`
-    `maven-publish`
+    alias(libs.plugins.gradle.plugin.publish)
 }
 
 group = "io.github.cribrodev"
@@ -26,6 +26,11 @@ java {
     }
 }
 
+// plugin-publish builds a javadoc jar; the comments document what needs it rather than every member.
+tasks.javadoc {
+    (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:all,-missing", "-quiet")
+}
+
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
     // PIT loads the interceptor in the JVM that runs the tests, so 17 is also the floor for that JVM.
@@ -33,10 +38,16 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 gradlePlugin {
+    website = "https://github.com/cribro-dev/cribro"
+    vcsUrl = "https://github.com/cribro-dev/cribro.git"
     plugins {
         create("cribro") {
             id = "io.github.cribrodev.cribro"
             implementationClass = "io.github.cribrodev.CribroPlugin"
+            displayName = "cribro: diff coverage and diff mutation testing"
+            description = "Reports which lines a branch changed that the tests do not execute (JaCoCo) " +
+                "and which changed lines the tests do not check (PIT), as plain text for an AI agent"
+            tags = listOf("coverage", "jacoco", "pitest", "mutation-testing", "diff-coverage")
         }
     }
 }
