@@ -32,6 +32,9 @@ import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.ModuleVersionIdentifier;
 import org.gradle.api.artifacts.result.ResolvedComponentResult;
+import org.gradle.api.attributes.Attribute;
+import org.gradle.api.attributes.Category;
+import org.gradle.api.attributes.Usage;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.provider.ProviderFactory;
@@ -49,23 +52,73 @@ import org.gradle.testing.jacoco.tasks.JacocoReport;
 /**
  * Adds {@code diffCoverage}, {@code changedLines}, and {@code pitestDiff} to every project that
  * applies the {@code java} plugin, and has the {@code test} task report which of the lines the
- * branch changed it executed.
+ * branch changed it executed. Every project, Java or not, gets the {@code cribroProjectElements}
+ * configuration, which tells the {@code cribro} task whether the project applies the java plugin.
  *
- * <p>The plugin is meant to be applied from an init script, to a build that knows nothing about it,
- * so it overrides the build's own JaCoCo settings for the {@code test} task: a build that applies
- * JaCoCo with the report switched off still gets the per-module XML report that diff coverage reads.
+ * <p>{@link CribroSettingsPlugin} applies it, often from an init script to a build that knows
+ * nothing about it, so it overrides the build's own JaCoCo settings for the {@code test} task: a
+ * build that applies JaCoCo with the report switched off still gets the per-module XML report that
+ * diff coverage reads.
  */
 public abstract class CribroPlugin implements Plugin<Project> {
 
   static final String PITEST_CONFIGURATION = "cribroPitest";
 
+  /**
+   * The consumable configuration of every project, which the {@code cribro} task of the root
+   * project resolves to find the projects that apply the java plugin.
+   */
+  static final String PROJECT_ELEMENTS_CONFIGURATION = "cribroProjectElements";
+
+  /**
+   * The {@code Usage} and {@code Category} value of that configuration. Both are set, so that a
+   * request for either attribute that names another value, as the JaCoCo and test report
+   * aggregation plugins request {@code Category}, does not select it.
+   */
+  static final String PROJECT_USAGE = "io.github.cribrodev.project";
+
+  /** Whether the project that owns the variant applies the java plugin. */
+  static final Attribute<Boolean> APPLIES_JAVA =
+      Attribute.of("io.github.cribrodev.appliesJava", Boolean.class);
+
   static final String JACOCO_VERSION = "0.8.16";
 
-  /** The versions of PIT this jar was built against, from {@code cribro.properties}. */
+  /** The version of this jar and of the PIT it was built against, from {@code cribro.properties}. */
   private static final Properties VERSIONS = versions();
+
+  static String version() {
+    return VERSIONS.getProperty("cribro");
+  }
+
+  static String pitestVersion() {
+    return VERSIONS.getProperty("pitest");
+  }
 
   @Override
   public void apply(Project project) {
+    // The cribro task of the root project resolves this configuration, because under Isolated
+    // Projects a dependency is the only way one project can read another.
+    project
+        .getConfigurations()
+        .create(
+            PROJECT_ELEMENTS_CONFIGURATION,
+            c -> {
+              c.setCanBeConsumed(true);
+              c.setCanBeResolved(false);
+              c.setDescription("Whether this project applies the java plugin, for the cribro task");
+              c.getAttributes()
+                  .attribute(
+                      Usage.USAGE_ATTRIBUTE,
+                      project.getObjects().named(Usage.class, PROJECT_USAGE));
+              c.getAttributes()
+                  .attribute(
+                      Category.CATEGORY_ATTRIBUTE,
+                      project.getObjects().named(Category.class, PROJECT_USAGE));
+              c.getAttributes()
+                  .attributeProvider(
+                      APPLIES_JAVA,
+                      project.provider(() -> project.getPlugins().hasPlugin(JavaPlugin.class)));
+            });
     // The overrides of the build's own settings wait until its scripts have run, or a build that
     // disables JaCoCo or its report for `test` would win. afterEvaluate is registered here: Gradle
     // refuses it inside the callback that sees the java plugin applied.
@@ -255,7 +308,7 @@ public abstract class CribroPlugin implements Plugin<Project> {
     String pitestVersion =
         providers
             .gradleProperty("cribro.pitestVersion")
-            .getOrElse(VERSIONS.getProperty("pitest"));
+            .getOrElse(pitestVersion());
     String pitestJunit5Version =
         providers
             .gradleProperty("cribro.pitestJunit5PluginVersion")
