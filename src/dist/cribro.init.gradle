@@ -1,13 +1,41 @@
-// Adds diffCoverage, changedLines, and pitestDiff to every Java project of a build that knows
-// nothing about them:
-//   ./gradlew --init-script /path/to/cribro.init.gradle :module:test
-// The plugin jar is read from the directory that holds this script.
+// Applies cribro to a build that does not apply it itself, which adds diffCoverage, changedLines, and
+// pitestDiff to every Java project, has `test` print diff coverage, and adds the `cribro` task that
+// prints how to use them:
+//   ./gradlew --init-script /path/to/cribro.init.gradle -q cribro
+// The plugin is read from a cribro.jar beside this script where there is one, and otherwise
+// version @version@ is resolved from the Gradle Plugin Portal; a -SNAPSHOT version needs the jar to apply cribro.
 initscript {
-    dependencies {
-        classpath files(new File(getSourceFile().parentFile, "cribro.jar"))
+    def localJar = new File(getSourceFile().parentFile, "cribro.jar")
+    if (localJar.file) {
+        dependencies {
+            classpath files(localJar)
+        }
+    } else if (!"@version@".endsWith("-SNAPSHOT")) {
+        repositories {
+            gradlePluginPortal()
+        }
+        dependencies {
+            classpath "io.github.cribrodev:cribro-gradle-plugin:@version@"
+        }
     }
 }
 
-allprojects {
-    apply plugin: io.github.cribrodev.CribroPlugin
+def initScript = buildscript.sourceFile
+def scriptClassLoader = buildscript.classLoader
+
+settingsEvaluated { settings ->
+    // A build that applies cribro itself keeps the version it chose. The settings script has run by
+    // now, so its plugins block has applied cribro if the build applies it at all.
+    if (settings.pluginManager.hasPlugin("io.github.cribrodev.cribro")) {
+        return
+    }
+    if (!new File(initScript.parentFile, "cribro.jar").file && "@version@".endsWith("-SNAPSHOT")) {
+        throw new GradleException("No cribro.jar beside ${initScript}, and cribro @version@ is a development build " +
+            "that the Gradle Plugin Portal does not host. Copy build/dist/cribro.jar of the cribro build into " +
+            "${initScript.parentFile}.")
+    }
+    settings.extensions.extraProperties.set("cribro.initScript", initScript.path)
+    // Loaded by name: with no classpath, as for a -SNAPSHOT script without its jar, a class named in
+    // this script would fail to compile before the -SNAPSHOT check could run.
+    settings.pluginManager.apply(scriptClassLoader.loadClass("io.github.cribrodev.CribroSettingsPlugin"))
 }
