@@ -1,0 +1,10 @@
+[versions]
+# The jar compiles against pitest-entry, and the plugin resolves the same PIT for the target build.
+pitest = "1.30.2"
+pitest-junit5-plugin = "1.2.3"
+
+[libraries]
+junit-bom = "org.junit:junit-bom:5.14.4"
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+pitest-entry = { module = "org.pitest:pitest-entry", version.ref = "pitest" }

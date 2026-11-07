@@ -10,18 +10,14 @@ repositories {
     mavenCentral()
 }
 
-// The jar compiles against pitest-entry, and the plugin resolves the same PIT for the target build.
-val pitestVersion = "1.30.2"
-val pitestJunit5PluginVersion = "1.2.3"
-
 dependencies {
     // The PIT interceptor and listener run inside PIT, which supplies these classes; the plugin
     // jar itself has no runtime dependency beyond the Gradle API.
-    compileOnly("org.pitest:pitest-entry:$pitestVersion")
-    testImplementation("org.pitest:pitest-entry:$pitestVersion")
-    testImplementation(platform("org.junit:junit-bom:5.14.4"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    compileOnly(libs.pitest.entry)
+    testImplementation(libs.pitest.entry)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 java {
@@ -46,17 +42,20 @@ gradlePlugin {
 }
 
 val versions by tasks.registering(WriteProperties::class) {
+    description = "Writes the PIT versions that the plugin reads at run time."
     destinationFile = layout.buildDirectory.file("generated/versions/io/github/cribrodev/cribro.properties")
-    property("pitest", pitestVersion)
-    property("pitestJunit5Plugin", pitestJunit5PluginVersion)
+    property("pitest", libs.versions.pitest.asProvider())
+    property("pitestJunit5Plugin", libs.versions.pitest.junit5.plugin)
 }
 
 sourceSets.main {
-    resources.srcDir(versions.map { layout.buildDirectory.dir("generated/versions").get() })
+    resources.srcDir(files(layout.buildDirectory.dir("generated/versions")).builtBy(versions))
 }
 
 // Writes the jar and the init script into one directory, so the init script finds the jar beside it.
 val dist by tasks.registering(Sync::class) {
+    group = "distribution"
+    description = "Writes cribro.jar and cribro.init.gradle into build/dist, to copy into ~/.gradle/cribro."
     from(tasks.jar) { rename { "cribro.jar" } }
     from("src/dist")
     into(layout.buildDirectory.dir("dist"))
