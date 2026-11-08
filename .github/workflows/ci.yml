@@ -77,3 +77,28 @@ jobs:
         with:
           name: test-reports ${{ matrix.name }}
           path: build/reports/tests/
+
+  jdk11:
+    name: Gradle 8.14.3 on JDK 11
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: jdk11
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 11
+      # Installed last, so JAVA_HOME points at it while the plugin is built.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 25
+      # Puts Gradle 8.14.3 on PATH as gradle; ./gradlew still runs this build's own version.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          gradle-version: 8.14.3
+      - run: ./gradlew --quiet dist
+      - name: Run the sample on JDK 11
+        env:
+          JAVA_HOME: ${{ steps.jdk11.outputs.path }}
+        run: .github/jdk11-sample/run.sh gradle build/dist

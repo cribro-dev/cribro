@@ -17,7 +17,8 @@ The code started in NullAway's `buildSrc` ([uber/NullAway#1833](https://github.c
 - JUnit 4, or JUnit Jupiter or Vintage on the JUnit Platform, for `pitestDiff`.
 
 Tried on pgjdbc (Gradle 9.7.1, JUnit Jupiter), NullAway (Gradle 9.8.1, JUnit 4), and a one-class build on Gradle
-8.14.3 whose tests have no `junit-platform-launcher` dependency.
+8.14.3 whose tests have no `junit-platform-launcher` dependency. CI runs `test pitestDiff` through the init script on
+a one-class build with both Gradle 8.14.3 and its tests on JDK 11.
 
 ## Install
 
