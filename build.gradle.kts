@@ -86,6 +86,17 @@ val dist by tasks.registering(Sync::class) {
 
 tasks.test {
     useJUnitPlatform()
+    // CI picks the JDK that runs the tests, and extra options for the test JVM, from a random matrix
+    // (.github/workflows/matrix.mjs). Without these properties the tests run on the compile toolchain.
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = providers.gradleProperty("testJavaVersion")
+            .map { JavaLanguageVersion.of(it) }
+            .orElse(java.toolchain.languageVersion)
+        vendor = providers.gradleProperty("testJavaVendor")
+            .map { JvmVendorSpec.matching(it) }
+            .orElse(java.toolchain.vendor)
+    }
+    providers.gradleProperty("testExtraJvmArgs").orNull?.let { jvmArgs(it.split(Regex("\\s+")).filter(String::isNotEmpty)) }
     // The init script tests run a build with the jar and the init script laid out as dist leaves them.
     val distDirectory = files(dist)
     jvmArgumentProviders.add(objects.newInstance<DistArgument>().apply { this.dist.from(distDirectory) })
