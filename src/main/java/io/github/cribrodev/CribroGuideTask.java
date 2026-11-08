@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
@@ -87,7 +88,7 @@ public abstract class CribroGuideTask extends DefaultTask {
       out.append("No project of this build applies the java plugin, so no project has the tasks.\n");
     } else {
       out.append("Projects with diffCoverage, changedLines, and pitestDiff: ")
-          .append(String.join(", ", projectPaths.stream().sorted().toList()))
+          .append(projectPaths.stream().sorted().collect(Collectors.joining(", ")))
           .append("\n");
     }
     out.append('\n');

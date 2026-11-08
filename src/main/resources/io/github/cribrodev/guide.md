@@ -81,7 +81,7 @@ pass the parent branch: `-Pcribro.diffBase=<parent>`.
 | `-Pcribro.pitestVersion=<v>` | `{{pitestVersion}}` | PIT version |
 | `-Pcribro.jacocoVersion=<v>` | the build's, else `{{jacocoVersion}}` | JaCoCo version for the test JVM |
 
-The tests PIT runs need JDK 17 or later.
+The tests PIT runs need JDK 11 or later.
 
 ## Limits
 

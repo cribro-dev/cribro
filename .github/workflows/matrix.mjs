@@ -13,8 +13,8 @@ const { matrix } = createGitHubMatrixBuilder();
 
 matrix.failOnUnsatisfiableFilters(true);
 
-// The JDK that runs the tests. TestKit starts the Gradle builds under test on the same JDK, and PIT
-// loads the plugin's classes into it, so 17 is the floor.
+// The JDK that runs the tests. TestKit starts the Gradle builds under test on the same JDK, and the
+// Gradle version of this build needs 17, so 17 is the floor here although the plugin runs on 11.
 matrix.addAxis({
   name: 'java_version',
   title: x => 'Java ' + x,

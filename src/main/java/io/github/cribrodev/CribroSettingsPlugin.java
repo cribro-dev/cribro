@@ -22,6 +22,7 @@ import org.gradle.api.GradleException;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
 import org.gradle.api.artifacts.component.ProjectComponentIdentifier;
 import org.gradle.api.artifacts.result.DependencyResult;
 import org.gradle.api.artifacts.result.ResolvedDependencyResult;
@@ -135,7 +136,8 @@ public abstract class CribroSettingsPlugin implements Plugin<Settings> {
         .map(
             component -> {
               for (DependencyResult dependency : component.getDependencies()) {
-                if (dependency instanceof UnresolvedDependencyResult unresolved) {
+                if (dependency instanceof UnresolvedDependencyResult) {
+                  UnresolvedDependencyResult unresolved = (UnresolvedDependencyResult) dependency;
                   throw new GradleException(
                       "Cannot tell whether "
                           + path
@@ -144,8 +146,9 @@ public abstract class CribroSettingsPlugin implements Plugin<Settings> {
                       unresolved.getFailure());
                 }
                 ResolvedDependencyResult resolved = (ResolvedDependencyResult) dependency;
-                if (resolved.getSelected().getId() instanceof ProjectComponentIdentifier selected
-                    && selected.getProjectPath().equals(":")) {
+                ComponentIdentifier selected = resolved.getSelected().getId();
+                if (selected instanceof ProjectComponentIdentifier
+                    && ((ProjectComponentIdentifier) selected).getProjectPath().equals(":")) {
                   // Before Gradle 9, the graph of a detached configuration has the identity of
                   // the root project, so a project with the same group and name resolves to the
                   // root. That project is then read directly.
@@ -153,8 +156,8 @@ public abstract class CribroSettingsPlugin implements Plugin<Settings> {
                       ? List.of(path)
                       : List.<String>of();
                 }
-                if (!(resolved.getSelected().getId() instanceof ProjectComponentIdentifier project)
-                    || !project.getProjectPath().equals(path)) {
+                if (!(selected instanceof ProjectComponentIdentifier)
+                    || !((ProjectComponentIdentifier) selected).getProjectPath().equals(path)) {
                   throw new GradleException(
                       "Cannot tell whether "
                           + path
