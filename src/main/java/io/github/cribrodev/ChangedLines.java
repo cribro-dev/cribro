@@ -30,14 +30,8 @@ import org.gradle.api.GradleException;
  * <p>Diff coverage and diff mutation testing answer different questions about the same set of
  * lines, so both read it from here: a change to how the base is chosen moves both reports at once,
  * and {@code -Pcribro.diffBase} means the same thing to each of them.
- *
- * @param ref the ref the diff was taken against, as the caller or git named it
- * @param commit the merge base of that ref and HEAD
- * @param lines the changed lines of every Java file, keyed by repository-relative path
- * @param unreadable a line naming each untracked file this JVM could not read
  */
-record ChangedLines(
-    String ref, String commit, Map<String, NavigableSet<Integer>> lines, List<String> unreadable) {
+final class ChangedLines {
 
   /** The Gradle property that names the base ref for every diff-based report. */
   static final String BASE_PROPERTY = "cribro.diffBase";
@@ -48,6 +42,42 @@ record ChangedLines(
   private static final String[] UPSTREAM_NAME = {"rev-parse", "--abbrev-ref", "@{upstream}"};
 
   private static final String[] BRANCH_NAME = {"rev-parse", "--abbrev-ref", "HEAD"};
+
+  private final String ref;
+  private final String commit;
+  private final Map<String, NavigableSet<Integer>> lines;
+  private final List<String> unreadable;
+
+  private ChangedLines(
+      String ref,
+      String commit,
+      Map<String, NavigableSet<Integer>> lines,
+      List<String> unreadable) {
+    this.ref = ref;
+    this.commit = commit;
+    this.lines = lines;
+    this.unreadable = unreadable;
+  }
+
+  /** Returns the ref the diff was taken against, as the caller or git named it. */
+  String ref() {
+    return ref;
+  }
+
+  /** Returns the merge base of {@link #ref()} and HEAD. */
+  String commit() {
+    return commit;
+  }
+
+  /** Returns the changed lines of every Java file, keyed by repository-relative path. */
+  Map<String, NavigableSet<Integer>> lines() {
+    return lines;
+  }
+
+  /** Returns a line naming each untracked file this JVM could not read. */
+  List<String> unreadable() {
+    return unreadable;
+  }
 
   /**
    * Returns the lines changed since the merge base of HEAD and the base ref, or null where no

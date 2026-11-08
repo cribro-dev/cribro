@@ -47,21 +47,64 @@ public final class MutantsFile {
    */
   public static final String LISTENER_FORMAT = "DIFF_QUALITY_MUTANTS";
 
-  /**
-   * One mutant as the file holds it.
-   *
-   * @param status the PIT status name, such as {@code SURVIVED} or {@code NO_COVERAGE}
-   * @param mutatedClass the binary name of the mutated class, such as {@code com.x.A$Inner}
-   * @param tests the tests PIT recorded as covering the mutant, as PIT names them
-   */
-  public record Mutant(
-      String status,
-      String mutatedClass,
-      String method,
-      String sourceFile,
-      int lineNumber,
-      String description,
-      List<String> tests) {}
+  /** One mutant as the file holds it. */
+  public static final class Mutant {
+    private final String status;
+    private final String mutatedClass;
+    private final String method;
+    private final String sourceFile;
+    private final int lineNumber;
+    private final String description;
+    private final List<String> tests;
+
+    public Mutant(
+        String status,
+        String mutatedClass,
+        String method,
+        String sourceFile,
+        int lineNumber,
+        String description,
+        List<String> tests) {
+      this.status = status;
+      this.mutatedClass = mutatedClass;
+      this.method = method;
+      this.sourceFile = sourceFile;
+      this.lineNumber = lineNumber;
+      this.description = description;
+      this.tests = tests;
+    }
+
+    /** Returns the PIT status name, such as {@code SURVIVED} or {@code NO_COVERAGE}. */
+    public String status() {
+      return status;
+    }
+
+    /** Returns the binary name of the mutated class, such as {@code com.x.A$Inner}. */
+    public String mutatedClass() {
+      return mutatedClass;
+    }
+
+    public String method() {
+      return method;
+    }
+
+    public String sourceFile() {
+      return sourceFile;
+    }
+
+    public int lineNumber() {
+      return lineNumber;
+    }
+
+    public String description() {
+      return description;
+    }
+
+    /** Returns the tests PIT recorded as covering the mutant, as PIT names them. */
+    public List<String> tests() {
+      return tests;
+    }
+  }
 
   private MutantsFile() {}
 

@@ -504,8 +504,8 @@ public abstract class CribroPlugin implements Plugin<Project> {
     try {
       Method commandLine = test.getFilter().getClass().getMethod("getCommandLineIncludePatterns");
       Object value = commandLine.invoke(test.getFilter());
-      if (value instanceof Collection<?> collection) {
-        for (Object pattern : collection) {
+      if (value instanceof Collection<?>) {
+        for (Object pattern : (Collection<?>) value) {
           patterns.add(String.valueOf(pattern));
         }
       }

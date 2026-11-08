@@ -43,8 +43,25 @@ final class DiffCoverageReport {
       Pattern.compile("(?://|/\\*|\\*)\\s*diff-coverage:\\s*ignore(?![\\w-])");
 
   /** One changed line the run left uncovered, with the source text the report quotes for it. */
-  record AffectedLine(
-      int number, boolean executed, int coveredBranches, int totalBranches, String source) {
+  static final class AffectedLine {
+    private final int number;
+    private final boolean executed;
+    private final int coveredBranches;
+    private final int totalBranches;
+    private final String source;
+
+    AffectedLine(
+        int number, boolean executed, int coveredBranches, int totalBranches, String source) {
+      this.number = number;
+      this.executed = executed;
+      this.coveredBranches = coveredBranches;
+      this.totalBranches = totalBranches;
+      this.source = source;
+    }
+
+    boolean executed() {
+      return executed;
+    }
 
     /** Returns how many branch outcomes of this line nothing took. */
     int missedBranches() {
@@ -354,7 +371,10 @@ final class DiffCoverageReport {
       // The header names the filter, and a reader still quotes the total as the branch's coverage.
       out.append("\n  a filtered run leaves the rest of the change looking unexecuted");
     }
-    List<FileCoverage> owing = measured.stream().filter(FileCoverage::needsAttention).toList();
+    List<FileCoverage> owing =
+        measured.stream()
+            .filter(FileCoverage::needsAttention)
+            .collect(Collectors.toUnmodifiableList());
     if (!owing.isEmpty()) {
       // Printed for one file too: a subheading that comes and goes between two runs reads as a
       // different code path rather than as a list with nothing to order.
@@ -441,7 +461,7 @@ final class DiffCoverageReport {
     List<FileCoverage> covered =
         measured.stream()
             .filter(file -> file.affected.isEmpty() && file.acknowledged.isEmpty())
-            .toList();
+            .collect(Collectors.toUnmodifiableList());
     if (covered.isEmpty()) {
       return;
     }
@@ -469,7 +489,9 @@ final class DiffCoverageReport {
    */
   private void appendAcknowledged(StringBuilder out, Budget budget, int linesPerFile) {
     List<FileCoverage> files =
-        measured.stream().filter(file -> !file.acknowledged.isEmpty()).toList();
+        measured.stream()
+            .filter(file -> !file.acknowledged.isEmpty())
+            .collect(Collectors.toUnmodifiableList());
     if (files.isEmpty() || budget.isSpent()) {
       return;
     }

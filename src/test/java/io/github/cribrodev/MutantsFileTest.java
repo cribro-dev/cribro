@@ -15,6 +15,7 @@
  */
 package io.github.cribrodev;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
@@ -44,7 +45,19 @@ class MutantsFileTest {
 
     Files.writeString(file, MutantsFile.line(mutant) + "\n");
 
-    assertEquals(List.of(mutant), MutantsFile.read(file));
+    List<MutantsFile.Mutant> read = MutantsFile.read(file);
+    assertEquals(1, read.size(), "mutants read");
+    MutantsFile.Mutant back = read.get(0);
+    assertAll(
+        () -> assertEquals("SURVIVED", back.status(), "status"),
+        () -> assertEquals("com.x.A$Inner", back.mutatedClass(), "mutatedClass"),
+        () -> assertEquals("m", back.method(), "method"),
+        () -> assertEquals("A.java", back.sourceFile(), "sourceFile"),
+        () -> assertEquals(12, back.lineNumber(), "lineNumber"),
+        () -> assertEquals("negated conditional", back.description(), "description"),
+        () ->
+            assertEquals(
+                List.of("com.x.T.a(com.x.T)", "com.x.T.b(com.x.T)"), back.tests(), "tests"));
   }
 
   @Test

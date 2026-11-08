@@ -22,11 +22,26 @@ import java.util.Map;
 /**
  * The JVM arguments of a Gradle {@code Test} task, split into those PIT's {@code --jvmArgs} can
  * pass and those it cannot.
- *
- * @param value the arguments joined with commas, for {@code --jvmArgs}
- * @param leftOut the arguments PIT cannot pass whole, which the test JVM under PIT runs without
  */
-public record PitestJvmArgs(String value, List<String> leftOut) {
+public final class PitestJvmArgs {
+
+  private final String value;
+  private final List<String> leftOut;
+
+  private PitestJvmArgs(String value, List<String> leftOut) {
+    this.value = value;
+    this.leftOut = leftOut;
+  }
+
+  /** Returns the arguments joined with commas, for {@code --jvmArgs}. */
+  public String value() {
+    return value;
+  }
+
+  /** Returns the arguments PIT cannot pass whole, which the test JVM under PIT runs without. */
+  public List<String> leftOut() {
+    return leftOut;
+  }
 
   /**
    * Returns the JVM arguments of the test task as one comma-separated {@code --jvmArgs} value.

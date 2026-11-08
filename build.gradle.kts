@@ -22,7 +22,7 @@ dependencies {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -33,7 +33,16 @@ tasks.javadoc {
 
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
-    // PIT loads the interceptor in the JVM that runs the tests, so 17 is also the floor for that JVM.
+}
+
+// The plugin runs in a Gradle 8 daemon, which may run on JDK 11, and PIT loads its interceptor into
+// the JVM that runs the target build's tests. The PIT this plugin resolves is compiled for Java 11.
+tasks.compileJava {
+    options.release = 11
+}
+
+// TestKit starts this build's own Gradle version, which needs JDK 17.
+tasks.compileTestJava {
     options.release = 17
 }
 

@@ -10,8 +10,9 @@ The code started in NullAway's `buildSrc` ([uber/NullAway#1833](https://github.c
 
 ## Requirements
 
-- Gradle 8.0 or later, running on JDK 17 or later. Nothing older than 8.14 has been tried.
-- Tests that run on JDK 17 or later, since PIT loads this plugin's classes into the test JVM.
+- Gradle 8.0 or later, running on JDK 11 or later (Gradle 9 itself needs JDK 17). Nothing older than 8.14 has been
+  tried.
+- Tests that run on JDK 11 or later, since PIT loads this plugin's classes into the test JVM.
 - Java sources under the `java` plugin's source sets; Kotlin and Groovy sources are not measured.
 - JUnit 4, or JUnit Jupiter or Vintage on the JUnit Platform, for `pitestDiff`.
 
@@ -23,6 +24,7 @@ Tried on pgjdbc (Gradle 9.7.1, JUnit Jupiter), NullAway (Gradle 9.8.1, JUnit 4),
 cribro is applied either by the build itself, as a settings plugin, or by an init script, to a build that knows
 nothing about it. Both add the same tasks. Where the build applies the plugin itself, the init script leaves it alone
 and the build's version runs. The plugin is not published yet, so for now both start from a build of this repository.
+Building it needs JDK 25 where Gradle finds it, for example as `JAVA_HOME`.
 
 ### In the build
 

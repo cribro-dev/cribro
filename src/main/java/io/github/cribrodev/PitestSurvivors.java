@@ -29,6 +29,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Renders the mutants a PIT run left alive, grouped by source file and line.
@@ -86,13 +87,79 @@ public final class PitestSurvivors {
   private static final Pattern LAMBDA = Pattern.compile("lambda\\$(.+)\\$\\d+");
 
   /** One live mutant, as the report prints it. */
-  private record Mutant(String description, String method, Set<String> tests) {}
+  private static final class Mutant {
+    private final String description;
+    private final String method;
+    private final Set<String> tests;
+
+    Mutant(String description, String method, Set<String> tests) {
+      this.description = description;
+      this.method = method;
+      this.tests = tests;
+    }
+
+    String description() {
+      return description;
+    }
+
+    String method() {
+      return method;
+    }
+
+    Set<String> tests() {
+      return tests;
+    }
+  }
 
   /** The live mutants of one source line, and the tests that reach it. */
-  private record Line(int number, String source, List<Mutant> mutants, Set<String> tests) {}
+  private static final class Line {
+    private final int number;
+    private final String source;
+    private final List<Mutant> mutants;
+    private final Set<String> tests;
+
+    Line(int number, String source, List<Mutant> mutants, Set<String> tests) {
+      this.number = number;
+      this.source = source;
+      this.mutants = mutants;
+      this.tests = tests;
+    }
+
+    int number() {
+      return number;
+    }
+
+    String source() {
+      return source;
+    }
+
+    List<Mutant> mutants() {
+      return mutants;
+    }
+
+    Set<String> tests() {
+      return tests;
+    }
+  }
 
   /** The live mutants of one source file. */
-  private record FileMutants(String path, List<Line> lines) {
+  private static final class FileMutants {
+    private final String path;
+    private final List<Line> lines;
+
+    FileMutants(String path, List<Line> lines) {
+      this.path = path;
+      this.lines = lines;
+    }
+
+    String path() {
+      return path;
+    }
+
+    List<Line> lines() {
+      return lines;
+    }
+
     int mutantCount() {
       return lines.stream().mapToInt(line -> line.mutants().size()).sum();
     }
@@ -219,7 +286,10 @@ public final class PitestSurvivors {
     List<String> paths = new ArrayList<>();
     paths.add(DiffCoverageTask.relativize(repository, outputFile));
     // A run that analyzed no mutant leaves no HTML report, and a path that names no file is left out.
-    otherPaths = otherPaths.stream().filter(path -> new File(repository, path).exists()).toList();
+    otherPaths =
+        otherPaths.stream()
+            .filter(path -> new File(repository, path).exists())
+            .collect(Collectors.toUnmodifiableList());
     paths.addAll(otherPaths);
     Files.createDirectories(outputFile.toPath().getParent());
     Files.writeString(
