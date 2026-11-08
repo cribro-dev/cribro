@@ -229,11 +229,15 @@ public abstract class DiffCoverageTask extends DefaultTask {
     return console + "\n\n" + diffCoverage + "\n" + jacoco;
   }
 
-  /** Returns the path as the reader would type it, which is relative to the repository. */
+  /**
+   * Returns the path as the reader would type it: relative to the repository, with {@code /}
+   * between the names on every platform, as git prints paths.
+   */
   static String relativize(File repository, File file) {
     Path root = repository.toPath().toAbsolutePath().normalize();
     Path target = file.toPath().toAbsolutePath().normalize();
-    return target.startsWith(root) ? root.relativize(target).toString() : target.toString();
+    String path = target.startsWith(root) ? root.relativize(target).toString() : target.toString();
+    return path.replace(File.separatorChar, '/');
   }
 
   /**

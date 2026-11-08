@@ -110,10 +110,12 @@ class CribroSettingsPluginTest {
     BuildResult result = run(initScript, "cribro");
 
     // Whether the directory is written from ~ depends on where the temporary directory lies, and
-    // CribroGuideTaskTest covers that; here the command has to pass the init script.
+    // CribroGuideTaskTest covers that, and the quoting a Windows temporary directory needs; here the
+    // command has to pass the init script.
     assertEquals(
         "./gradlew --init-script <dir>/cribro.init.gradle <project>:test",
-        testCommand(result).replaceFirst("\\S+/cribro\\.init\\.gradle", "<dir>/cribro.init.gradle"));
+        testCommand(result)
+            .replaceFirst("\\S+/cribro\\.init\\.gradle'?", "<dir>/cribro.init.gradle"));
   }
 
   @Test

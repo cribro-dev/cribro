@@ -381,7 +381,7 @@ class DiffCoverageTaskRunTest {
       assertEquals(
           List.of(
               "Full diff coverage report:",
-              "  " + FULL_REPORT,
+              "  build/reports/diff-coverage/test.txt",
               "Full JaCoCo report:",
               "  report.xml"),
           printed.subList(Math.max(paths, 0), printed.size()),
@@ -439,10 +439,7 @@ class DiffCoverageTaskRunTest {
       task.getOutputFile().set(directory.resolve("report.xml").resolve("test.txt").toFile());
       String printed = task.describeRun();
       assertTrue(
-          printed.contains(
-              "Full diff coverage report: cannot write "
-                  + Path.of("report.xml", "test.txt")
-                  + ": "),
+          printed.contains("Full diff coverage report: cannot write report.xml/test.txt: "),
           printed);
     }
 
