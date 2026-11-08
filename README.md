@@ -5,6 +5,21 @@ check (PIT), for a Gradle build with Java sources. The build can apply cribro as
 can apply it without changing the build. The output is plain text sized for an AI agent; there is no HTML report of its
 own.
 
+On [pgjdbc/pgjdbc#4036](https://github.com/pgjdbc/pgjdbc/pull/4036), `test` ends with a block like this one, cut here
+to one file:
+
+```text
+Diff coverage against origin/HEAD (a340cb2b0), from :postgresql:test --tests *SRVLookupTest
+  a filtered run leaves the rest of the change looking unexecuted
+  ordered by uncovered changed lines, then uncovered branches
+
+  pgjdbc/src/main/java/org/postgresql/Driver.java
+    12/16 changed lines executed, 12/22 branches covered
+    uncovered changed code:
+      254: not executed; 0 of 4 branches covered: if (!url.startsWith("jdbc:postgresql:") && !url.startsWith("jdbc:postgresql+srv:")) {
+      731: not executed: String srvHost = PGProperty.SRV_HOST.getOrDefault(props);
+```
+
 The code started in NullAway's `buildSrc` ([uber/NullAway#1833](https://github.com/uber/NullAway/pull/1833) and
 [uber/NullAway#1975](https://github.com/uber/NullAway/pull/1975)), written by the same author.
 
@@ -15,71 +30,136 @@ The code started in NullAway's `buildSrc` ([uber/NullAway#1833](https://github.c
 - Tests that run on JDK 11 or later, since PIT loads this plugin's classes into the test JVM.
 - Java sources under the `java` plugin's source sets; Kotlin and Groovy sources are not measured.
 - JUnit 4, or JUnit Jupiter or Vintage on the JUnit Platform, for `pitestDiff`.
+- To build cribro itself: a JDK 25 where Gradle finds it, for example as `JAVA_HOME`. The build does not download
+  one.
 
-Tried on pgjdbc (Gradle 9.7.1, JUnit Jupiter), NullAway (Gradle 9.8.1, JUnit 4), and a one-class build on Gradle
-8.14.3 whose tests have no `junit-platform-launcher` dependency. CI runs `test pitestDiff` through the init script on
-a one-class build with both Gradle 8.14.3 and its tests on JDK 11.
+Tried on pgjdbc (Gradle 9.4.1 and 9.7.1, JUnit Jupiter), NullAway (Gradle 9.8.1, JUnit 4), and a one-class build on
+Gradle 8.14.3 whose tests have no `junit-platform-launcher` dependency. CI runs `test pitestDiff` through the init
+script on a one-class build with both Gradle 8.14.3 and its tests on JDK 11.
 
 ## Install
 
-cribro is applied either by the build itself, as a settings plugin, or by an init script, to a build that knows
-nothing about it. Both add the same tasks. Where the build applies the plugin itself, the init script leaves it alone
-and the build's version runs. The plugin is not published yet, so for now both start from a build of this repository.
-Building it needs JDK 25 where Gradle finds it, for example as `JAVA_HOME`.
+| Request | Section | What changes |
+| --- | --- | --- |
+| Set up cribro in a project, so everyone who builds it gets the tasks | [In the build](#in-the-build) | The project's `settings.gradle(.kts)` and `AGENTS.md` |
+| Install cribro for your own use, in projects you do not want to modify | [Without changing the build](#without-changing-the-build) | `~/.gradle/cribro/` and `~/.claude/skills/cribro/`; no project file |
+
+Both ways add the same tasks. Where the build applies the plugin itself, the init script leaves it alone and the
+build's version runs, so the two ways can coexist.
 
 ### In the build
 
-Publish the plugin to the local Maven repository from a checkout of this repository:
+<details>
+<summary>From source: a build of this repository</summary>
 
-```bash
-./gradlew --quiet publishToMavenLocal
-```
+A build from source has the version `0.1.0-SNAPSHOT`, which resolves only from the local Maven repository of a
+machine that ran step 1. A clone of the project on any other machine, CI included, fails to resolve the plugin, so keep
+this change out of a repository that others build.
 
-Then add it to the build's `settings.gradle.kts`; it adds the tasks to every Java project of the build:
+1. Clone this repository into a directory outside the project, `<cribro-dir>` below, and publish the plugin to the
+   local Maven repository:
 
-```kotlin
-pluginManagement {
-    repositories {
-        mavenLocal()
-        gradlePluginPortal()
-    }
-}
+   ```bash
+   git clone https://github.com/cribro-dev/cribro.git <cribro-dir>
+   ```
 
-plugins {
-    id("io.github.cribrodev.cribro") version "0.1.0-SNAPSHOT"
-}
-```
+   ```bash
+   cd <cribro-dir> && ./gradlew --quiet publishToMavenLocal
+   ```
 
-In `settings.gradle`, the `pluginManagement` block reads the same, and the plugin line is
-`id 'io.github.cribrodev.cribro' version '0.1.0-SNAPSHOT'`. Drop `mavenLocal()` once
-the plugin is published.
+2. Return to the project's root directory, and add the plugin to its `settings.gradle.kts`. It adds the tasks to
+   every Java project of the build:
+
+   ```kotlin
+   pluginManagement {
+       repositories {
+           mavenLocal()
+           gradlePluginPortal()
+       }
+   }
+
+   plugins {
+       id("io.github.cribrodev.cribro") version "0.1.0-SNAPSHOT"
+   }
+   ```
+
+   Where the file already has a `pluginManagement` or a `plugins` block, add the lines to it instead of writing a
+   second one. A `repositories` block replaces Gradle's default of the Plugin Portal, so keep `gradlePluginPortal()` in
+   it. In `settings.gradle`, the `pluginManagement` block reads the same, and the plugin line is
+   `id 'io.github.cribrodev.cribro' version '0.1.0-SNAPSHOT'`.
+
+3. Check that the build applies it, from the project's root directory. The command prints `cribro 0.1.0-SNAPSHOT`
+   and the Java projects that have the tasks:
+
+   ```bash
+   ./gradlew -q cribro
+   ```
+
+4. Tell the agents that work on the project. `./gradlew -q cribro` prints the guide for the version the build runs, so
+   a note in `AGENTS.md`, or in whichever file the project's agents read, needs only to name that command:
+
+   ```markdown
+   After changing the Java sources under `src/main` of a module, run `./gradlew <project>:test`, where
+   `<project>` is that module's Gradle project path, such as `:app`, and act on the diff coverage report it
+   prints. `./gradlew -q cribro` prints how to read the reports and how to run mutation testing.
+   ```
+
+</details>
+
+[What the plugin does to a build](#what-the-plugin-does-to-a-build) lists the settings it overrides in each project.
 
 ### Without changing the build
 
-```bash
-./gradlew --quiet dist
-```
+The init script applies cribro to a build that knows nothing about it, such as a clone of pgjdbc. Gradle runs it only
+in a command that names it with `--init-script`.
 
-```bash
-mkdir -p ~/.gradle/cribro && cp build/dist/* ~/.gradle/cribro/
-```
+<details>
+<summary>From source: a build of this repository</summary>
 
-Then pass `--init-script ~/.gradle/cribro/cribro.init.gradle` to every Gradle command that should measure, as shown
-under [Use](#use).
+1. Clone this repository into a directory outside any project, `<cribro-dir>` below, and build the init script and
+   the plugin jar into `build/dist`:
 
-The init script loads `cribro.jar` from its own directory. Without a `cribro.jar` beside it, a script built from a
-released version resolves that version from the Gradle Plugin Portal, and a script built from a `-SNAPSHOT` version
-fails with:
+   ```bash
+   git clone https://github.com/cribro-dev/cribro.git <cribro-dir>
+   ```
+
+   ```bash
+   cd <cribro-dir> && ./gradlew --quiet dist
+   ```
+
+2. Copy them into `~/.gradle/cribro/`. Run this from `<cribro-dir>`:
+
+   ```bash
+   mkdir -p ~/.gradle/cribro && cp build/dist/* ~/.gradle/cribro/
+   ```
+
+3. Install the agent skill, which tells the agent when to run cribro and how to reach the guide through the init
+   script. `agent/cribro/SKILL.md` is a plain skill file; for Claude Code, run this from `<cribro-dir>`:
+
+   ```bash
+   mkdir -p ~/.claude/skills/cribro && cp agent/cribro/SKILL.md ~/.claude/skills/cribro/
+   ```
+
+4. Check it from the root directory of the project you want to measure. The command prints
+   `cribro 0.1.0-SNAPSHOT` and the Java projects that have the tasks:
+
+   ```bash
+   ./gradlew --init-script ~/.gradle/cribro/cribro.init.gradle -q cribro
+   ```
+
+After `git pull` in `<cribro-dir>`, run `./gradlew --quiet dist` and steps 2 and 3 again. An init script built
+before cribro became a settings plugin applies the plugin a second time to a build that applies it itself, and that
+build fails.
+
+</details>
+
+The init script loads `cribro.jar` from its own directory, or resolves its version from the Portal, also in a build
+that applies cribro itself. Without a `cribro.jar` beside it, a script built from a released version resolves that
+version from the Gradle Plugin Portal, and a script built from a `-SNAPSHOT` version fails with:
 
 ```text
 No cribro.jar beside <script>, and cribro <version> is a development build that the Gradle Plugin Portal does not host. Copy build/dist/cribro.jar of the cribro build into <directory>.
 ```
-
-The init script still loads its jar, or resolves its version from the Portal, in a build that applies cribro itself.
-
-An init script installed before cribro became a settings plugin applies the plugin a second time to a build that
-applies it itself, and that build fails. Copy `build/dist/*` and `agent/cribro/SKILL.md` again after updating this
-repository.
 
 The plugin jar has no runtime dependencies: PIT is resolved from the target build's repositories when `pitestDiff`
 runs.
@@ -110,24 +190,14 @@ add `--init-script ~/.gradle/cribro/cribro.init.gradle` to each:
 ./gradlew <project>:pitestDiff -Pcribro.pitestTargetTests=<tests>
 ```
 
-`<project>` is a Gradle project path such as `:app`, which can differ from the directory; the guide lists the paths.
-For the root project, the task path is `:test`.
+`<project>` is a Gradle project path such as `:app`, which can differ from the directory: pgjdbc's `pgjdbc/` directory
+is `:postgresql`. The guide lists the paths. For the root project, the task path is `:test`.
 
 ## Tell an agent about it
 
-`./gradlew -q cribro` prints the guide for the version the build runs, so an `AGENTS.md` note or a skill needs only
-to name that command.
-
-In a build that applies the plugin, add a note like this to `AGENTS.md`:
-
-```markdown
-After changing the Java sources under `src/main` of a module, run `./gradlew <project>:test`, where `<project>` is
-that module's Gradle project path, such as `:app`, and act on the diff coverage report it prints. `./gradlew -q cribro`
-prints how to read the reports and how to run mutation testing.
-```
-
-For a build that does not, install `agent/cribro/SKILL.md` as a skill (`~/.claude/skills/cribro/SKILL.md` for Claude
-Code). It tells the agent when to run cribro and how to reach the guide through the init script.
+An agent learns about cribro from the `AGENTS.md` note of a build that applies it, step 4 of
+[In the build](#in-the-build), or from the skill installed in step 3 of
+[Without changing the build](#without-changing-the-build).
 
 ## What the plugin does to a build
 
