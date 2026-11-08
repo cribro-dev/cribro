@@ -104,18 +104,22 @@ public abstract class CribroGuideTask extends DefaultTask {
    * @param initScript the init script that applied cribro, or {@code null} where the build applies
    *     it itself
    * @param home the user's home directory, which the command abbreviates to {@code ~}
-   * @return the command, with the path quoted where the shell would otherwise change it
+   * @return the command, with {@code /} between the names on every platform and the path quoted
+   *     where the shell would otherwise change it
    */
   static String gradleCommand(String initScript, String home) {
     if (initScript == null) {
       return "./gradlew";
     }
-    String prefix = home + File.separator;
-    if (home != null && initScript.startsWith(prefix)) {
-      // The shell expands ~/ only outside quotes, so only the rest of the path is quoted.
-      return "./gradlew --init-script ~/" + shellWord(initScript.substring(prefix.length()));
+    String path = initScript.replace(File.separatorChar, '/');
+    if (home != null) {
+      String prefix = home.replace(File.separatorChar, '/') + "/";
+      if (path.startsWith(prefix)) {
+        // The shell expands ~/ only outside quotes, so only the rest of the path is quoted.
+        return "./gradlew --init-script ~/" + shellWord(path.substring(prefix.length()));
+      }
     }
-    return "./gradlew --init-script " + shellWord(initScript);
+    return "./gradlew --init-script " + shellWord(path);
   }
 
   /** Returns {@code text} as one word that bash and zsh pass on unchanged. */

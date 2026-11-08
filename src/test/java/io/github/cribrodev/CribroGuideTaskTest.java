@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 /**
  * The guide writes every command the way this build has to run it, so an agent can paste the
@@ -83,6 +85,24 @@ class CribroGuideTaskTest {
     assertEquals(
         "./gradlew --init-script '/opt/it'\\''s/cribro.init.gradle'",
         CribroGuideTask.gradleCommand("/opt/it's/cribro.init.gradle", "/home/u"));
+  }
+
+  /** A backslash would need quotes in the shell, and Gradle reads {@code /} on Windows too. */
+  @Test
+  @EnabledOnOs(OS.WINDOWS)
+  void aWindowsPathUnderTheHomeDirectoryIsWrittenFromTildeWithSlashes() {
+    assertEquals(
+        "./gradlew --init-script ~/.gradle/cribro/cribro.init.gradle",
+        CribroGuideTask.gradleCommand(
+            "C:\\Users\\u\\.gradle\\cribro\\cribro.init.gradle", "C:\\Users\\u"));
+  }
+
+  @Test
+  @EnabledOnOs(OS.WINDOWS)
+  void aWindowsPathOutsideTheHomeDirectoryKeepsItsDriveAndUsesSlashes() {
+    assertEquals(
+        "./gradlew --init-script C:/opt/cribro/cribro.init.gradle",
+        CribroGuideTask.gradleCommand("C:\\opt\\cribro\\cribro.init.gradle", "C:\\Users\\u"));
   }
 
   @Test
