@@ -4,18 +4,75 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Replays the matrix of an earlier run: paste the seed from that run's step summary.
+  workflow_dispatch:
+    inputs:
+      matrix_rng_seed:
+        description: RNG seed
+        required: false
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  matrix_prep:
+    name: Matrix preparation
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    env:
+      MATRIX_JOBS: 5
+      # Every push to one pull request draws the same rows, so a fix can be checked on the row
+      # that failed.
+      GITHUB_PR_NUMBER: ${{ github.event.number }}
+      RNG_SEED: ${{ github.event.inputs.matrix_rng_seed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: .github/workflows
+      - id: set-matrix
+        run: node .github/workflows/matrix.mjs
+
+  build:
+    needs: matrix_prep
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.matrix_prep.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: test-jdk
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ matrix.java_distribution }}
+          java-version: ${{ matrix.java_version }}
+      # Installed last, so JAVA_HOME points at it and Gradle runs on it whatever JDK runs the tests.
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-      - run: ./gradlew --quiet build dist
+      - name: Build
+        env:
+          TEST_JDK: ${{ steps.test-jdk.outputs.path }}
+          TEST_JAVA_VERSION: ${{ matrix.java_version }}
+          TEST_JAVA_VENDOR: ${{ matrix.java_vendor }}
+          TEST_EXTRA_JVM_ARGS: ${{ matrix.test_extra_jvm_args }}
+        run: |
+          ./gradlew --quiet build dist \
+            "-Porg.gradle.java.installations.paths=$TEST_JDK" \
+            "-PtestJavaVersion=$TEST_JAVA_VERSION" \
+            "-PtestJavaVendor=$TEST_JAVA_VENDOR" \
+            "-PtestExtraJvmArgs=$TEST_EXTRA_JVM_ARGS"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: test-reports ${{ matrix.name }}
+          path: build/reports/tests/

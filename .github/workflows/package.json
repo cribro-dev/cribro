@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "Generates the randomized CI matrix in matrix.mjs",
+  "type": "module",
+  "dependencies": {
+    "@vlsi/github-actions-random-matrix": "2.4.0"
+  }
+}
