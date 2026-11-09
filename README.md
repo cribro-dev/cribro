@@ -117,7 +117,7 @@ in a command that names it with `--init-script`.
 <summary>From source: a build of this repository</summary>
 
 1. Clone this repository into a directory outside any project, `<cribro-dir>` below, and build the init script and
-   the plugin jar into `build/dist`:
+   the plugin jar into `cribro-gradle-plugin/build/dist`:
 
    ```bash
    git clone https://github.com/cribro-dev/cribro.git <cribro-dir>
@@ -130,7 +130,7 @@ in a command that names it with `--init-script`.
 2. Copy them into `~/.gradle/cribro/`. Run this from `<cribro-dir>`:
 
    ```bash
-   mkdir -p ~/.gradle/cribro && cp build/dist/* ~/.gradle/cribro/
+   mkdir -p ~/.gradle/cribro && cp cribro-gradle-plugin/build/dist/* ~/.gradle/cribro/
    ```
 
 3. Install the agent skill, which tells the agent when to run cribro and how to reach the guide through the init
@@ -158,7 +158,7 @@ that applies cribro itself. Without a `cribro.jar` beside it, a script built fro
 version from the Gradle Plugin Portal, and a script built from a `-SNAPSHOT` version fails with:
 
 ```text
-No cribro.jar beside <script>, and cribro <version> is a development build that the Gradle Plugin Portal does not host. Copy build/dist/cribro.jar of the cribro build into <directory>.
+No cribro.jar beside <script>, and cribro <version> is a development build that the Gradle Plugin Portal does not host. Copy cribro-gradle-plugin/build/dist/cribro.jar of the cribro build into <directory>.
 ```
 
 The plugin jar has no runtime dependencies: PIT is resolved from the target build's repositories when `pitestDiff`

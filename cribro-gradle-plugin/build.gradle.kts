@@ -1,13 +1,7 @@
 plugins {
+    id("cribro.java")
     `java-gradle-plugin`
     alias(libs.plugins.gradle.plugin.publish)
-}
-
-group = "io.github.cribrodev"
-version = "0.1.0-SNAPSHOT"
-
-repositories {
-    mavenCentral()
 }
 
 dependencies {
@@ -15,35 +9,6 @@ dependencies {
     // jar itself has no runtime dependency beyond the Gradle API.
     compileOnly(libs.pitest.entry)
     testImplementation(libs.pitest.entry)
-    testImplementation(platform(libs.junit.bom))
-    testImplementation(libs.junit.jupiter)
-    testRuntimeOnly(libs.junit.platform.launcher)
-}
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-}
-
-// plugin-publish builds a javadoc jar; the comments document what needs it rather than every member.
-tasks.javadoc {
-    (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:all,-missing", "-quiet")
-}
-
-tasks.withType<JavaCompile>().configureEach {
-    options.compilerArgs.add("-parameters")
-}
-
-// The plugin runs in a Gradle 8 daemon, which may run on JDK 11, and PIT loads its interceptor into
-// the JVM that runs the target build's tests. The PIT this plugin resolves is compiled for Java 11.
-tasks.compileJava {
-    options.release = 11
-}
-
-// TestKit starts this build's own Gradle version, which needs JDK 17.
-tasks.compileTestJava {
-    options.release = 17
 }
 
 gradlePlugin {
@@ -94,23 +59,9 @@ val dist by tasks.registering(Sync::class) {
 }
 
 tasks.test {
-    useJUnitPlatform()
-    // CI picks the JDK that runs the tests, and extra options for the test JVM, from a random matrix
-    // (.github/workflows/matrix.mjs). Without these properties the tests run on the compile toolchain.
-    javaLauncher = javaToolchains.launcherFor {
-        languageVersion = providers.gradleProperty("testJavaVersion")
-            .map { JavaLanguageVersion.of(it) }
-            .orElse(java.toolchain.languageVersion)
-        vendor = providers.gradleProperty("testJavaVendor")
-            .map { JvmVendorSpec.matching(it) }
-            .orElse(java.toolchain.vendor)
-    }
-    providers.gradleProperty("testExtraJvmArgs").orNull?.let { jvmArgs(it.split(Regex("\\s+")).filter(String::isNotEmpty)) }
     // The init script tests run a build with the jar and the init script laid out as dist leaves them.
     val distDirectory = files(dist)
     jvmArgumentProviders.add(objects.newInstance<DistArgument>().apply { this.dist.from(distDirectory) })
-    systemProperty("junit.jupiter.testmethod.order.default", "org.junit.jupiter.api.MethodOrderer\$Random")
-    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }
 
 /** Passes the dist directory to the tests, keyed by its contents rather than by where the checkout lies. */
