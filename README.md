@@ -84,14 +84,14 @@ this change out of a repository that others build.
    }
 
    plugins {
-       id("io.github.cribrodev.cribro") version "0.1.0-SNAPSHOT"
+       id("io.github.cribro-dev.cribro") version "0.1.0-SNAPSHOT"
    }
    ```
 
    Where the file already has a `pluginManagement` or a `plugins` block, add the lines to it instead of writing a
    second one. A `repositories` block replaces Gradle's default of the Plugin Portal, so keep `gradlePluginPortal()` in
    it. In `settings.gradle`, the `pluginManagement` block reads the same, and the plugin line is
-   `id 'io.github.cribrodev.cribro' version '0.1.0-SNAPSHOT'`.
+   `id 'io.github.cribro-dev.cribro' version '0.1.0-SNAPSHOT'`.
 
 3. Check that the build applies it, from the project's root directory. The command prints `cribro 0.1.0-SNAPSHOT`
    and the Java projects that have the tasks:
@@ -225,7 +225,7 @@ plugin, it:
 
 ## Maven
 
-For a Maven build, cribro is a Maven extension and plugin, `io.github.cribrodev:cribro-maven-plugin`. Loaded as an
+For a Maven build, cribro is a Maven extension and plugin, `io.github.cribro-dev:cribro-maven-plugin`. Loaded as an
 extension, it attaches JaCoCo to the tests of surefire's `default-test` execution and prints the diff coverage report
 before Maven's build summary. Its goal `cribro:pitest-diff` runs PIT on the changed lines.
 
@@ -263,7 +263,7 @@ machine that ran step 1 below.
      ```xml
      <extensions>
        <extension>
-         <groupId>io.github.cribrodev</groupId>
+         <groupId>io.github.cribro-dev</groupId>
          <artifactId>cribro-maven-plugin</artifactId>
          <version>0.1.0-SNAPSHOT</version>
        </extension>

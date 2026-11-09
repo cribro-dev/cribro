@@ -40,7 +40,7 @@ gradlePlugin {
         // A settings plugin, so that one line in settings.gradle(.kts) covers every project, and so
         // that the init script can tell whether the build already applies it.
         create("cribro") {
-            id = "io.github.cribrodev.cribro"
+            id = "io.github.cribro-dev.cribro"
             implementationClass = "io.github.cribrodev.CribroSettingsPlugin"
             displayName = "cribro: diff coverage and diff mutation testing"
             description = "Reports which lines a branch changed that the tests do not execute (JaCoCo) " +

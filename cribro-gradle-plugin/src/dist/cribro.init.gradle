@@ -15,7 +15,7 @@ initscript {
             gradlePluginPortal()
         }
         dependencies {
-            classpath "io.github.cribrodev:cribro-gradle-plugin:@version@"
+            classpath "io.github.cribro-dev:cribro-gradle-plugin:@version@"
         }
     }
 }
@@ -26,7 +26,7 @@ def scriptClassLoader = buildscript.classLoader
 settingsEvaluated { settings ->
     // A build that applies cribro itself keeps the version it chose. The settings script has run by
     // now, so its plugins block has applied cribro if the build applies it at all.
-    if (settings.pluginManager.hasPlugin("io.github.cribrodev.cribro")) {
+    if (settings.pluginManager.hasPlugin("io.github.cribro-dev.cribro")) {
         return
     }
     if (!new File(initScript.parentFile, "cribro.jar").file && "@version@".endsWith("-SNAPSHOT")) {

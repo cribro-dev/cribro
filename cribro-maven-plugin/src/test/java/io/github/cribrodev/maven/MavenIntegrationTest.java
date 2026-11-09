@@ -369,7 +369,7 @@ class MavenIntegrationTest {
     return String.join(
         "\n",
         "<extensions><extension>",
-        "  <groupId>io.github.cribrodev</groupId><artifactId>cribro-maven-plugin</artifactId>",
+        "  <groupId>io.github.cribro-dev</groupId><artifactId>cribro-maven-plugin</artifactId>",
         "  <version>" + VERSION + "</version>",
         "</extension></extensions>",
         "");

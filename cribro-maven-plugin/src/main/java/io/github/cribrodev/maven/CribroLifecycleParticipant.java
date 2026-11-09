@@ -39,7 +39,7 @@ import org.apache.maven.project.MavenProject;
 @Singleton
 public class CribroLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
-  static final String GROUP_ID = "io.github.cribrodev";
+  static final String GROUP_ID = "io.github.cribro-dev";
 
   static final String ARTIFACT_ID = "cribro-maven-plugin";
 

@@ -9,7 +9,7 @@ cribro adds diff coverage to `test` and diff mutation testing to every Java proj
 with a `pom.xml` follows the [Maven](#maven) section; the rest of this section is for Gradle builds.
 
 In a Gradle build, cribro adds a `pitestDiff` task. A build can apply it itself: its `settings.gradle` or
-`settings.gradle.kts` names `io.github.cribrodev.cribro`. Otherwise the init script at
+`settings.gradle.kts` names `io.github.cribro-dev.cribro`. Otherwise the init script at
 `~/.gradle/cribro/cribro.init.gradle` applies it without changing the build.
 
 Before the first measurement in a build, print the guide. Where the build applies cribro:
