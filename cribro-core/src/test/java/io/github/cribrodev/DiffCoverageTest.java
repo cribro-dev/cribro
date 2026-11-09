@@ -176,4 +176,11 @@ class DiffCoverageTest {
               directory.toFile(), List.of(MEASURED), List.of(older, newer)));
     }
   }
+
+  @Test
+  void theGradleFilterNamesEachTestMethodInItsOwnQuotedArgument() {
+    assertEquals(
+        "--tests 'p.ATest.one' --tests 'p.ATest$Inner.two'",
+        DiffCoverage.gradleTestFilter(List.of("p.ATest.one", "p.ATest$Inner.two")));
+  }
 }

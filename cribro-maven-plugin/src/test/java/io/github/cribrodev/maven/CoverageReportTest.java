@@ -145,4 +145,11 @@ class CoverageReportTest {
                 TestRun.measured(app, 0, "FooTest", null, exec),
                 TestRun.measured(lib, 0, null, null, exec))));
   }
+
+  @Test
+  void theSurefireFilterSeparatesTheMethodFromItsClassWithAHash() {
+    assertEquals(
+        "-Dtest='p.ATest#one,p.ATest$Inner#two' -Dsurefire.failIfNoSpecifiedTests=false",
+        CoverageReport.surefireTestFilter(List.of("p.ATest.one", "p.ATest$Inner.two")));
+  }
 }

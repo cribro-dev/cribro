@@ -146,6 +146,7 @@ final class CoverageReport {
           DiffCoverage.in(git)
               .baseRef(base)
               .propertyFlag("-D")
+              .testFilter(CoverageReport::surefireTestFilter)
               .sourceRoots(sourceRoots)
               .reports(List.of(xml))
               .coverage(coverage)
@@ -166,6 +167,19 @@ final class CoverageReport {
     List<String> all = new ArrayList<>(notes);
     all.addAll(blocks);
     return String.join("\n\n", all);
+  }
+
+  /**
+   * Returns the Surefire properties that run only the given {@code pkg.Class.method} tests, in
+   * every module of an {@code -am} build, most of which have none of them.
+   */
+  static String surefireTestFilter(List<String> tests) {
+    List<String> patterns = new ArrayList<>();
+    for (String test : tests) {
+      int dot = test.lastIndexOf('.');
+      patterns.add(test.substring(0, dot) + "#" + test.substring(dot + 1));
+    }
+    return "-Dtest='" + String.join(",", patterns) + "' -Dsurefire.failIfNoSpecifiedTests=false";
   }
 
   /**

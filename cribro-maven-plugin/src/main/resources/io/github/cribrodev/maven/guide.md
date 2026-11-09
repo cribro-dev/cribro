@@ -34,6 +34,19 @@ module in the build, so `-am` matters when the tests live in a module of their o
 If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It stays
 counted as uncovered and leaves the list of work.
 
+### Unchanged code the change routes new inputs to
+
+A changed `case` label, a changed condition of an `if` or a loop, and a call on a changed line can send new inputs to
+lines nobody edited: the statements the label falls through to, the branches the condition guards, the body of a
+method of the same file that the call reaches. The block after the total lists those methods and the lines and
+branches of them the run did not cover. The change does not owe them a test, but they now run under conditions the old
+tests may never have set up.
+
+After a run of the whole suite, old tests execute most of that code under the old conditions, so the block ends with
+the `-Dtest` arguments that run only the test methods the change added or edited under the module's own `src`
+directory. Run those: what is left uncovered then is what the change's own tests do not exercise in the code it
+reaches. Write a test for a gap that the change made reachable, or say why it cannot happen.
+
 The report measures the tests of surefire's `default-test` execution. Only `.java` files under the main source
 directories count; Kotlin and Groovy changes are not measured. A build that skips the tests prints no report.
 

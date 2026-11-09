@@ -30,6 +30,19 @@ untested. The whole report is in `<module>/build/reports/diff-coverage/test.txt`
 If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It stays
 counted as uncovered and leaves the list of work.
 
+### Unchanged code the change routes new inputs to
+
+A changed `case` label, a changed condition of an `if` or a loop, and a call on a changed line can send new inputs to
+lines nobody edited: the statements the label falls through to, the branches the condition guards, the body of a method
+of the same file that the call reaches. The block after the total lists those methods and the lines and branches of them
+the run did not cover. The change does not owe them a test, but they now run under conditions the old tests may never
+have set up.
+
+After a run of the whole suite, old tests execute most of that code under the old conditions, so the block ends with
+the `--tests` arguments that run only the test methods the change added or edited. Run those: what is left
+uncovered then is what the change's own tests do not exercise in the code it reaches, such as a literal in a mode the
+new test never sets. Write a test for a gap that the change made reachable, or say why it cannot happen.
+
 `{{gradlew}} <project>:diffCoverage` prints the report again from the last test run without running the tests. Only
 `.java` files under the main source sets of the `java` plugin count; Kotlin and Groovy changes are not measured.
 
