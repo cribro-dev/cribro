@@ -1,9 +1,9 @@
-# cribro Gradle plugin
+# cribro
 
 Reports which lines a branch changed that the tests do not execute (JaCoCo) and which changed lines the tests do not
-check (PIT), for a Gradle build with Java sources. The build can apply cribro as a settings plugin, or an init script
-can apply it without changing the build. The output is plain text sized for an AI agent; there is no HTML report of its
-own.
+check (PIT), for a Gradle or Maven build with Java sources. The build can apply cribro itself, or cribro can be loaded
+into a build that knows nothing about it. For Maven, see [Maven](#maven). The output is plain text sized for an AI
+agent; there is no HTML report of its own.
 
 On [pgjdbc/pgjdbc#4036](https://github.com/pgjdbc/pgjdbc/pull/4036), `test` ends with a block like this one, cut here
 to one file:
@@ -25,13 +25,16 @@ The code started in NullAway's `buildSrc` ([uber/NullAway#1833](https://github.c
 
 ## Requirements
 
+A Gradle build needs:
+
 - Gradle 8.0 or later, running on JDK 11 or later (Gradle 9 itself needs JDK 17). Nothing older than 8.14 has been
   tried.
 - Tests that run on JDK 11 or later, since PIT loads this plugin's classes into the test JVM.
 - Java sources under the `java` plugin's source sets; Kotlin and Groovy sources are not measured.
 - JUnit 4, or JUnit Jupiter or Vintage on the JUnit Platform, for `pitestDiff`.
-- To build cribro itself: a JDK 25 where Gradle finds it, for example as `JAVA_HOME`. The build does not download
-  one.
+
+A Maven build has its own list, in [Requirements for Maven](#requirements-for-maven). To build cribro itself, for
+either build tool, you need a JDK 25 where Gradle finds it, for example as `JAVA_HOME`. The build does not download one.
 
 Tried on pgjdbc (Gradle 9.4.1 and 9.7.1, JUnit Jupiter), NullAway (Gradle 9.8.1, JUnit 4), and a one-class build on
 Gradle 8.14.3 whose tests have no `junit-platform-launcher` dependency. CI runs `test pitestDiff` through the init
@@ -39,13 +42,15 @@ script on a one-class build with both Gradle 8.14.3 and its tests on JDK 11.
 
 ## Install
 
-| Request | Section | What changes |
-| --- | --- | --- |
-| Set up cribro in a project, so everyone who builds it gets the tasks | [In the build](#in-the-build) | The project's `settings.gradle(.kts)` and `AGENTS.md` |
-| Install cribro for your own use, in projects you do not want to modify | [Without changing the build](#without-changing-the-build) | `~/.gradle/cribro/` and `~/.claude/skills/cribro/`; no project file |
+| Build tool | Request | Section | What changes |
+| --- | --- | --- | --- |
+| Gradle | Set up cribro in a project, so everyone who builds it gets the tasks | [In the build](#in-the-build) | The project's `settings.gradle(.kts)` and `AGENTS.md` |
+| Gradle | Install cribro for your own use, in projects you do not want to modify | [Without changing the build](#without-changing-the-build) | `~/.gradle/cribro/` and `~/.claude/skills/cribro/`; no project file |
+| Maven | Set up cribro in a project, so everyone who builds it gets the extension | [Install for Maven](#install-for-maven), step 2, in the build | The project's `.mvn/extensions.xml` and `AGENTS.md` |
+| Maven | Install cribro for your own use, in projects you do not want to modify | [Install for Maven](#install-for-maven), step 2, without changing the build | `~/.m2/cribro/` and `~/.claude/skills/cribro/`; no project file |
 
-Both ways add the same tasks. Where the build applies the plugin itself, the init script leaves it alone and the
-build's version runs, so the two ways can coexist.
+For Gradle, both ways add the same tasks. Where the build applies the plugin itself, the init script leaves it alone
+and the build's version runs, so the two ways can coexist.
 
 ### In the build
 
@@ -166,6 +171,8 @@ runs.
 
 ## Use
 
+This section is for Gradle; a Maven build follows [Use with Maven](#use-with-maven).
+
 `./gradlew -q cribro` prints the guide to the other tasks: the projects that have them, the commands written the way
 this build runs them, the properties, and how to act on each report.
 
@@ -196,8 +203,8 @@ is `:postgresql`. The guide lists the paths. For the root project, the task path
 ## Tell an agent about it
 
 An agent learns about cribro from the `AGENTS.md` note of a build that applies it, step 4 of
-[In the build](#in-the-build), or from the skill installed in step 3 of
-[Without changing the build](#without-changing-the-build).
+[In the build](#in-the-build) or of [Install for Maven](#install-for-maven), or from the skill installed in step 3 of
+[Without changing the build](#without-changing-the-build). The skill covers Maven builds too.
 
 ## What the plugin does to a build
 
@@ -215,6 +222,123 @@ plugin, it:
   `pitest-junit5-plugin` when `test` uses the JUnit Platform, plus `junit-platform-launcher` when the tests do not
   bring one;
 - runs PIT in a separate JVM from the `test` task's launcher, with its JVM arguments and system properties.
+
+## Maven
+
+For a Maven build, cribro is a Maven extension and plugin, `io.github.cribrodev:cribro-maven-plugin`. Loaded as an
+extension, it attaches JaCoCo to the tests of surefire's `default-test` execution and prints the diff coverage report
+before Maven's build summary. Its goal `cribro:pitest-diff` runs PIT on the changed lines.
+
+### Requirements for Maven
+
+- Maven 3.9 running on JDK 11 or later; tried on 3.9.16. Maven 4 has not been tried.
+- CI tests the extension on JDK 17 and later. It is compiled for JDK 11, but no test runs Maven on JDK 11.
+- Tests run by surefire's `default-test` execution, in a forked JVM.
+- For `cribro:pitest-diff`: tests on JUnit 4, or on JUnit Jupiter or Vintage on the JUnit Platform, in a JVM of JDK 11
+  or later.
+
+Tried on Guava, whose tests live in `guava-tests` and test the code of `guava`, without changing its build.
+
+### Install for Maven
+
+A build from source has the version `0.1.0-SNAPSHOT`, which resolves only from the local Maven repository of a
+machine that ran step 1 below.
+
+1. Clone this repository into a directory outside the project, `<cribro-dir>` below, publish the plugin to the local
+   Maven repository, and build the extension jar into `cribro-maven-plugin/build/dist`:
+
+   ```bash
+   git clone https://github.com/cribro-dev/cribro.git <cribro-dir>
+   ```
+
+   ```bash
+   cd <cribro-dir> && ./gradlew --quiet publishToMavenLocal :cribro-maven-plugin:extensionJar
+   ```
+
+2. Choose how the build loads cribro:
+
+   - In the build: add `.mvn/extensions.xml` to the project's root directory. Where the file exists, add the
+     `<extension>` element to it.
+
+     ```xml
+     <extensions>
+       <extension>
+         <groupId>io.github.cribrodev</groupId>
+         <artifactId>cribro-maven-plugin</artifactId>
+         <version>0.1.0-SNAPSHOT</version>
+       </extension>
+     </extensions>
+     ```
+
+   - Without changing the build: copy the extension jar into `~/.m2/cribro/`, and pass it to each Maven command with
+     `-Dmaven.ext.class.path`. Run this from `<cribro-dir>`:
+
+     ```bash
+     mkdir -p ~/.m2/cribro && cp cribro-maven-plugin/build/dist/cribro-maven.jar ~/.m2/cribro/
+     ```
+
+     The jar alone measures diff coverage. `cribro:pitest-diff` and `cribro:guide` also need the plugin in a
+     repository Maven reads, which step 1 put in the local one.
+
+3. Check it from the project's root directory. The command prints `cribro 0.1.0-SNAPSHOT` and the modules with tests:
+
+   ```bash
+   mvn -q cribro:guide
+   ```
+
+   Without changing the build:
+
+   ```bash
+   mvn -Dmaven.ext.class.path="$HOME"/.m2/cribro/cribro-maven.jar -q cribro:guide
+   ```
+
+4. Tell the agents that work on the project. In the build, `mvn -q cribro:guide` prints the guide for the version the
+   build loads, so a note in `AGENTS.md`, or in whichever file the project's agents read, needs only to name it:
+
+   ```markdown
+   After changing the Java sources under `src/main` of a module, run `mvn -pl <module> -am test`, where `<module>`
+   is the module whose tests exercise the change, such as `:app`, and act on the diff coverage report it prints.
+   `mvn -q cribro:guide` prints how to read the reports and how to run mutation testing.
+   ```
+
+   Without changing the build, install the agent skill as step 3 of
+   [Without changing the build](#without-changing-the-build) does; it covers Maven builds.
+
+After `git pull` in `<cribro-dir>`, run step 1 again, and for the jar install the copy in step 2, so that the extension
+jar and the plugin in the local Maven repository are the same version.
+
+Where a build loads cribro both ways, the build's copy acts and the other stands down.
+
+### Use with Maven
+
+`cribro:guide` prints the commands written for this build, the properties, and how to act on each report. The two
+commands an agent runs most are these; without changing the build, add
+`-Dmaven.ext.class.path="$HOME"/.m2/cribro/cribro-maven.jar` to each:
+
+```bash
+mvn -pl <module> -am test
+```
+
+```bash
+mvn -pl <module> -am test-compile cribro:pitest-diff -Dcribro.pitestTargetTests=<tests>
+```
+
+`<module>` is the module whose tests exercise the change, written `:artifactId`. The tests of every module in the
+build count, so `-am` adds the modules the tests depend on, and their changed code is measured too. Properties are
+the Gradle ones with `-D` in place of `-P`.
+
+### What the extension does to a build
+
+Loaded as an extension, cribro:
+
+- adds a JaCoCo agent to the `argLine` of surefire's `default-test` execution just before it runs, whatever the POM
+  sets there. Where the `argLine` already attaches a JaCoCo agent, as `jacoco-maven-plugin`'s `prepare-agent` does,
+  cribro reads that agent's file instead;
+- writes `target/cribro/jacoco.xml` and `target/cribro/diff-coverage.txt` in each module the change reached;
+- declares `cribro-maven-plugin` in every module that does not declare it, so that the `cribro:` prefix resolves.
+
+`cribro:pitest-diff` runs PIT in a separate JVM, with the classpath, JVM, `argLine`, system properties, environment
+variables, working directory, groups, includes, and excludes of surefire's `default-test` execution.
 
 ## License
 

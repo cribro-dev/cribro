@@ -30,10 +30,11 @@ import org.pitest.plugin.Feature;
  * Creates a {@link ChangedLinesFilter} over the {@link ChangedLinesFile} that the system property
  * {@value #PROPERTY} names.
  *
- * <p>PIT finds this factory through {@link java.util.ServiceLoader} on its own classpath, and only
- * the {@code pitestDiff} task puts it there, together with the property. The feature is on by
- * default so that the task need not also pass {@code --features}, and a missing property fails
- * the run rather than letting it mutate every line of the target classes.
+ * <p>PIT finds this factory through {@link java.util.ServiceLoader} on its own classpath. Whatever
+ * puts the factory there also sets the property: the Gradle {@code pitestDiff} task and the Maven
+ * goal {@code cribro:pitest-diff} do both. The feature is on by default so that the caller need not
+ * also pass {@code --features}, and a missing property fails the run rather than letting it mutate
+ * every line of the target classes.
  */
 public final class ChangedLinesFilterFactory implements MutationInterceptorFactory {
 

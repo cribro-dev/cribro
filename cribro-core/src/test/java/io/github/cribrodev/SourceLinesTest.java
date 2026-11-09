@@ -17,9 +17,12 @@ package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -94,5 +97,46 @@ class SourceLinesTest {
     sources.get(PATH, 1);
     Files.delete(directory.resolve(PATH));
     assertEquals("    return null;", sources.get(PATH, 2));
+  }
+
+  /**
+   * A path in a report is relative to the repository however the two paths reached cribro are
+   * spelled: on Windows, Maven spells a module's directory with long names where the directory it
+   * started in has an 8.3 short name, and a symbolic link gives the same pair on any platform.
+   */
+  @Nested
+  class Relativize {
+
+    /** Returns the directory {@code link}, which names {@code real} through a symbolic link. */
+    private Path linkTo(Path real) throws IOException {
+      try {
+        return Files.createSymbolicLink(directory.resolve("link"), real);
+      } catch (IOException | UnsupportedOperationException e) {
+        return Assumptions.abort("a file system with symbolic links: " + e);
+      }
+    }
+
+    @Test
+    void aFileIsRelativeToARepositorySpelledAnotherWay() throws IOException {
+      Path real = Files.createDirectories(directory.resolve("real"));
+      Path link = linkTo(real);
+
+      assertEquals(
+          "src/A.java",
+          SourceLines.relativize(link.toFile(), real.resolve("src/A.java").toFile()),
+          "relativize(link, real/src/A.java)");
+    }
+
+    @Test
+    void aFileOutsideTheRepositoryKeepsItsAbsolutePath() throws IOException {
+      Path real = Files.createDirectories(directory.resolve("real"));
+      Path link = linkTo(real);
+      File outside = directory.resolve("other/A.java").toFile();
+
+      assertEquals(
+          outside.getAbsolutePath().replace(File.separatorChar, '/'),
+          SourceLines.relativize(link.toFile(), outside),
+          "relativize(link, other/A.java)");
+    }
   }
 }

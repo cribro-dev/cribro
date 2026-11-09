@@ -30,7 +30,7 @@ import java.util.Map;
  * <p>The report quotes a line beside its counters, so that the reader sees the code to test without
  * opening the file, and reads the same text to decide whether the line carries an ignore marker.
  */
-final class SourceLines {
+public final class SourceLines {
 
   private final File repositoryRoot;
 
@@ -73,9 +73,44 @@ final class SourceLines {
    * between the names on every platform, as git prints paths.
    */
   public static String relativize(File repository, File file) {
-    Path root = repository.toPath().toAbsolutePath().normalize();
-    Path target = file.toPath().toAbsolutePath().normalize();
-    String path = target.startsWith(root) ? root.relativize(target).toString() : target.toString();
+    Path relative = relativeTo(repository, file);
+    String path =
+        relative != null
+            ? relative.toString()
+            : file.toPath().toAbsolutePath().normalize().toString();
     return path.replace(File.separatorChar, '/');
+  }
+
+  /**
+   * Returns {@code file} relative to {@code directory}, or null where it lies outside.
+   *
+   * <p>Where the two paths as given do not nest, their real paths are compared, with symbolic
+   * links and, on Windows, short names resolved. On Windows, Maven names each module of a reactor
+   * by its canonical path, which spells out a short name such as {@code RUNNER~1} in full, while
+   * the directory Maven started in, and the repository found above it, keep the form the shell
+   * gave.
+   */
+  public static Path relativeTo(File directory, File file) {
+    Path root = directory.toPath().toAbsolutePath().normalize();
+    Path target = file.toPath().toAbsolutePath().normalize();
+    if (target.startsWith(root)) {
+      return root.relativize(target);
+    }
+    try {
+      Path realRoot = realPath(root);
+      Path realTarget = realPath(target);
+      return realTarget.startsWith(realRoot) ? realRoot.relativize(realTarget) : null;
+    } catch (IOException e) {
+      return null;
+    }
+  }
+
+  /** Returns the real path of {@code path}'s nearest existing ancestor, with the rest appended. */
+  private static Path realPath(Path path) throws IOException {
+    Path existing = path;
+    while (existing != null && !Files.exists(existing)) {
+      existing = existing.getParent();
+    }
+    return existing == null ? path : existing.toRealPath().resolve(existing.relativize(path));
   }
 }
