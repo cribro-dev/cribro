@@ -2,6 +2,7 @@
 // what the Gradle and Maven plugins share, with no Gradle or Maven API.
 plugins {
     id("cribro.java")
+    `maven-publish`
 }
 
 dependencies {
@@ -22,4 +23,24 @@ val versions by tasks.registering(WriteProperties::class) {
 
 sourceSets.main {
     resources.srcDir(files(layout.buildDirectory.dir("generated/versions")).builtBy(versions))
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    // A local repository the Maven tests resolve cribro from, so they need nothing in ~/.m2.
+    repositories {
+        maven {
+            name = "it"
+            url = uri(rootProject.layout.buildDirectory.dir("it-repository"))
+        }
+    }
+    publications {
+        create<MavenPublication>("core") {
+            from(components["java"])
+        }
+    }
 }

@@ -26,7 +26,7 @@ java {
     }
 }
 
-// plugin-publish builds a javadoc jar; the comments document what needs it rather than every member.
+// Every project publishes a javadoc jar; the comments document what needs it rather than every member.
 tasks.javadoc {
     (options as StandardJavadocDocletOptions).addStringOption("Xdoclint:all,-missing", "-quiet")
 }
@@ -35,8 +35,9 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
 }
 
-// The plugin runs in a Gradle 8 daemon, which may run on JDK 11, and PIT loads its interceptor into
-// the JVM that runs the target build's tests. The PIT cribro resolves is compiled for Java 11.
+// The Gradle plugin runs in a Gradle 8 daemon, which may run on JDK 11, the Maven extension in a
+// Maven that cribro requires to run on JDK 11 or later, and PIT loads the interceptor into the JVM
+// that runs the target build's tests. The PIT cribro resolves is compiled for Java 11.
 tasks.compileJava {
     options.release = 11
 }

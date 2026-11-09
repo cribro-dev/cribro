@@ -1,13 +1,16 @@
 ---
 name: cribro
-description: Measure how well the tests of a Gradle Java project cover the lines the current branch changed. Use after changing the Java sources under src/main of a Gradle module and adding or changing its tests, before calling the change done; also when asked which changed lines no test executes, whether the new tests would notice a broken line, or for diff coverage or mutation testing of a branch. Runs JaCoCo diff coverage on `test` and PIT on the changed lines, through the build's own cribro plugin or an init script that leaves the build unchanged.
+description: Measure how well the tests of a Gradle or Maven Java project cover the lines the current branch changed. Use after changing the Java sources under src/main of a Gradle or Maven module and adding or changing its tests, before calling the change done; also when asked which changed lines no test executes, whether the new tests would notice a broken line, or for diff coverage or mutation testing of a branch. Runs JaCoCo diff coverage on `test` and PIT on the changed lines, through the build's own cribro plugin or extension, or through an init script or extension jar that leaves the build unchanged.
 ---
 
 # Diff coverage and diff mutation testing
 
-cribro adds diff coverage to `test` and a `pitestDiff` task to every Java project of a Gradle build. A build can apply
-it itself: its `settings.gradle` or `settings.gradle.kts` names `io.github.cribrodev.cribro`. Otherwise the init script
-at `~/.gradle/cribro/cribro.init.gradle` applies it without changing the build.
+cribro adds diff coverage to `test` and diff mutation testing to every Java project of a Gradle or Maven build. A build
+with a `pom.xml` follows the [Maven](#maven) section; the rest of this section is for Gradle builds.
+
+In a Gradle build, cribro adds a `pitestDiff` task. A build can apply it itself: its `settings.gradle` or
+`settings.gradle.kts` names `io.github.cribrodev.cribro`. Otherwise the init script at
+`~/.gradle/cribro/cribro.init.gradle` applies it without changing the build.
 
 Before the first measurement in a build, print the guide. Where the build applies cribro:
 
@@ -32,5 +35,26 @@ The usual sequence:
 2. Once the changed lines are covered, run the `pitestDiff` command the guide prints, with
    `-Pcribro.pitestTargetTests=<test classes>`. Each surviving mutant is a changed line whose behavior no test asserts.
 
-Where the build does not apply cribro and `~/.gradle/cribro/cribro.init.gradle` does not exist, cribro is not
+Where a Gradle build does not apply cribro and `~/.gradle/cribro/cribro.init.gradle` does not exist, cribro is not
 installed: tell the user, and point them at <https://github.com/cribro-dev/cribro#install>.
+
+## Maven
+
+In a Maven build, cribro is an extension. The build loads it itself where `.mvn/extensions.xml` names
+`cribro-maven-plugin`; otherwise `~/.m2/cribro/cribro-maven.jar` loads it without changing the build. Print the guide
+first. Where the build loads cribro (use `./mvnw` in place of `mvn` where the project has it):
+
+```bash
+mvn -q cribro:guide
+```
+
+Otherwise:
+
+```bash
+mvn -Dmaven.ext.class.path="$HOME"/.m2/cribro/cribro-maven.jar -q cribro:guide
+```
+
+Then follow the same sequence with the commands the guide prints: `test` ends with the diff coverage report, and
+`cribro:pitest-diff` with `-Dcribro.pitestTargetTests=<test classes>` reports surviving mutants. Where neither the build
+nor `~/.m2/cribro/cribro-maven.jar` provides cribro, it is not installed: tell the user, and point them at
+<https://github.com/cribro-dev/cribro#maven>.

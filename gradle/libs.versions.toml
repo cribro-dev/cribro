@@ -1,9 +1,12 @@
 [versions]
-# The jar compiles against pitest-entry, and the plugin resolves the same PIT for the target build.
+# The jar compiles against pitest-entry, and the plugins resolve the same PIT for the target build.
 pitest = "1.30.2"
 pitest-junit5-plugin = "1.2.3"
-# The JaCoCo the plugin applies to the tests.
+# The agent the Maven plugin attaches to the tests, and the API that reads what it recorded.
 jacoco = "0.8.16"
+# The oldest Maven the Maven plugin is built for; Maven supplies this API at run time.
+maven = "3.9.16"
+maven-resolver = "1.9.27"
 
 [libraries]
 # Prints failed tests with their stack traces, and marks them for GitHub Actions.
@@ -12,6 +15,20 @@ junit-bom = "org.junit:junit-bom:5.14.4"
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 pitest-entry = { module = "org.pitest:pitest-entry", version.ref = "pitest" }
+jacoco-agent = { module = "org.jacoco:org.jacoco.agent", version.ref = "jacoco" }
+jacoco-core = { module = "org.jacoco:org.jacoco.core", version.ref = "jacoco" }
+jacoco-report = { module = "org.jacoco:org.jacoco.report", version.ref = "jacoco" }
+maven-core = { module = "org.apache.maven:maven-core", version.ref = "maven" }
+maven-plugin-api = { module = "org.apache.maven:maven-plugin-api", version.ref = "maven" }
+maven-plugin-annotations = "org.apache.maven.plugin-tools:maven-plugin-annotations:3.15.1"
+maven-resolver-api = { module = "org.apache.maven.resolver:maven-resolver-api", version.ref = "maven-resolver" }
+javax-inject = "javax.inject:javax.inject:1"
+sisu-inject = "org.eclipse.sisu:org.eclipse.sisu.inject:1.0.0"
+# The filter surefire applies to classpathDependencyExcludes, in the version surefire 3.5 uses.
+maven-common-artifact-filters = "org.apache.maven.shared:maven-common-artifact-filters:3.4.0"
+# The Maven the integration tests run, unpacked from its distribution.
+apache-maven = { module = "org.apache.maven:apache-maven", version.ref = "maven" }
 
 [plugins]
 gradle-plugin-publish = "com.gradle.plugin-publish:2.2.1"
+maven-plugin-development = "org.gradlex.maven-plugin-development:1.0.3"

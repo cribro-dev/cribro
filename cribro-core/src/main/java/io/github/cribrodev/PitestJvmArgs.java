@@ -20,8 +20,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The JVM arguments of a Gradle {@code Test} task, split into those PIT's {@code --jvmArgs} can
- * pass and those it cannot.
+ * The arguments of the JVM that runs the tests, split into those PIT's {@code --jvmArgs} can pass
+ * and those it cannot.
  */
 public final class PitestJvmArgs {
 
@@ -44,17 +44,19 @@ public final class PitestJvmArgs {
   }
 
   /**
-   * Returns the JVM arguments of the test task as one comma-separated {@code --jvmArgs} value.
+   * Returns the test JVM's arguments, system properties, and heap limit as one comma-separated
+   * {@code --jvmArgs} value.
    *
-   * <p>Gradle moves every {@code -Dname=value} given through {@code jvmArgs} into the task's system
-   * properties, so the arguments the test JVM gets are the JVM arguments, the system properties,
-   * and the heap limit together.
+   * <p>For a Gradle {@code Test} task, Gradle moves every {@code -Dname=value} given through
+   * {@code jvmArgs} into the task's system properties, so the arguments the test JVM gets are the
+   * JVM arguments, the system properties, and the heap limit together.
    *
    * <p>PIT splits {@code --jvmArgs} at commas and the minion command line at whitespace, so an
    * argument containing either would reach the test JVM broken, as a stray main class name at
    * worst. Such an argument is left out and listed in {@link #leftOut()}.
    *
-   * @param maxHeapSize the test task's {@code maxHeapSize}, or null where it sets none
+   * @param maxHeapSize the heap limit, such as a Gradle test task's {@code maxHeapSize}, or null
+   *     where none is set
    */
   public static PitestJvmArgs of(
       List<String> jvmArgs, Map<String, ?> systemProperties, String maxHeapSize) {
