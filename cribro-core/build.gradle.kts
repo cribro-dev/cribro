@@ -2,8 +2,10 @@
 // what the Gradle and Maven plugins share, with no Gradle or Maven API.
 plugins {
     id("cribro.java")
-    `maven-publish`
+    id("cribro.publish")
 }
+
+description = "Git diff parsing, JaCoCo report reading, and the PIT interceptor shared by the cribro Gradle and Maven plugins"
 
 dependencies {
     // PIT supplies these classes when it loads the interceptor; the jar has no runtime dependency.

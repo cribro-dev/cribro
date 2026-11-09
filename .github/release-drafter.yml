@@ -1,0 +1,35 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+
+# Each pull request lands in the first category whose label it has; the rest go under "Other changes".
+categories:
+  - title: "Breaking changes"
+    exclusive: true
+    when:
+      label: breaking-change
+  - title: "New features"
+    exclusive: true
+    when:
+      label: enhancement
+  - title: "Bug fixes"
+    exclusive: true
+    when:
+      label: bug
+  - title: "Documentation"
+    exclusive: true
+    when:
+      label: documentation
+  - title: "Dependencies"
+    collapse-after: 8
+    exclusive: true
+    when:
+      label: dependencies
+
+change-template: "- $TITLE (#$NUMBER) by @$AUTHOR"
+no-changes-template: "No significant changes"
+
+template: |
+  ## What's changed
+  $CHANGES
+
+  **Contributors:** $CONTRIBUTORS

@@ -4,8 +4,10 @@
 plugins {
     id("cribro.java")
     alias(libs.plugins.maven.plugin.development)
-    `maven-publish`
+    id("cribro.publish")
 }
+
+description = "Maven extension and goals that report the changed lines the tests do not execute (JaCoCo) or do not check (PIT)"
 
 dependencies {
     implementation(project(":cribro-core"))
