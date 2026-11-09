@@ -27,7 +27,7 @@ import org.junit.jupiter.api.Test;
  * The changed-lines file of a module keeps the files under its source roots, keyed by the path
  * relative to the root that holds them.
  */
-class ChangedLinesTaskTest {
+class ChangedLinesTest {
 
   private static final NavigableSet<Integer> LINES = new TreeSet<>(List.of(4));
 
@@ -35,7 +35,7 @@ class ChangedLinesTaskTest {
   void aFileUnderASourceRootIsKeyedByItsPathBelowTheRoot() {
     assertEquals(
         Map.of("com/x/A.java", LINES),
-        ChangedLinesTask.underSourceRoots(
+        ChangedLines.underSourceRoots(
             Map.of("m/src/main/java/com/x/A.java", LINES), List.of("m/src/main/java")));
   }
 
@@ -43,7 +43,7 @@ class ChangedLinesTaskTest {
   void aFileOutsideEverySourceRootIsLeftOut() {
     assertEquals(
         Map.of(),
-        ChangedLinesTask.underSourceRoots(
+        ChangedLines.underSourceRoots(
             Map.of("m/src/test/java/com/x/ATest.java", LINES), List.of("m/src/main/java")));
   }
 
@@ -51,7 +51,24 @@ class ChangedLinesTaskTest {
   void aRootIsMatchedOnlyAsAWholeDirectory() {
     assertEquals(
         Map.of(),
-        ChangedLinesTask.underSourceRoots(
+        ChangedLines.underSourceRoots(
             Map.of("m/src/main/java2/com/x/A.java", LINES), List.of("m/src/main/java")));
+  }
+
+  @Test
+  void aFileUnderNestedRootsIsKeyedBelowTheInnermostRoot() {
+    assertEquals(
+        Map.of("com/x/A.java", LINES),
+        ChangedLines.underSourceRoots(
+            Map.of("m/src/main/java/gen/com/x/A.java", LINES),
+            List.of("m/src/main/java", "m/src/main/java/gen")));
+  }
+
+  @Test
+  void aRootWrittenWithBackslashesMatchesTheSlashesOfADiff() {
+    assertEquals(
+        Map.of("com/x/A.java", LINES),
+        ChangedLines.underSourceRoots(
+            Map.of("m/src/main/java/com/x/A.java", LINES), List.of("m\\src\\main\\java")));
   }
 }

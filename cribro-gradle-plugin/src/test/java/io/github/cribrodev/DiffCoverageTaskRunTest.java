@@ -29,7 +29,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.gradle.api.GradleException;
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Nested;
@@ -227,7 +226,7 @@ class DiffCoverageTaskRunTest {
       repositoryWithOneCommit();
       DiffCoverageTask task = task();
       task.getBaseRef().set("no/such/ref");
-      GradleException thrown = assertThrows(GradleException.class, task::describeRun);
+      CribroException thrown = assertThrows(CribroException.class, task::describeRun);
       assertEquals("cribro.diffBase no/such/ref does not resolve to a commit", thrown.getMessage());
     }
   }
@@ -445,14 +444,16 @@ class DiffCoverageTaskRunTest {
 
     /**
      * The path is printed only where the task wrote the file, and a reader who kept the path from
-     * an earlier run would otherwise read that run's report as this one's.
+     * an earlier run would otherwise read that run's report as this one's. The second run is a
+     * build of its own, since one build measures the diff once.
      */
     @Test
     void aRunThatMeasuresNothingLeavesNoReportFromAnEarlierRunBehind() throws Exception {
-      DiffCoverageTask task = taskWithUncoveredLines(2);
-      task.describeRun();
+      taskWithUncoveredLines(2).describeRun();
       Files.delete(directory.resolve("src/main/java/com/uber/A.java"));
-      task.describeRun();
+      DiffCoverageTask nextBuild = task(directory.resolve("report.xml"));
+      nextBuild.getBaseRef().set("master");
+      nextBuild.describeRun();
       assertFalse(
           Files.exists(directory.resolve(FULL_REPORT)),
           () -> "the report of the earlier run is still at " + FULL_REPORT);

@@ -121,20 +121,16 @@ final class DiffCoverageReport {
       return !affected.isEmpty();
     }
 
-    /** Returns how many of the lines this file owes a test nothing ran. */
-    int uncoveredChangedLines() {
-      return (int) affected.stream().filter(line -> !line.executed()).count();
-    }
+    /** How many of the lines this file owes a test nothing ran. */
+    int uncoveredChangedLines;
 
     /**
-     * Returns how many branch outcomes of the lines this file owes a test nothing took.
+     * How many branch outcomes of the lines this file owes a test nothing took.
      *
      * <p>Outcomes rather than lines, so that a line reported as {@code 0 of 4 branches covered}
      * outweighs one reported as {@code 1 of 2}.
      */
-    int missedChangedBranches() {
-      return affected.stream().mapToInt(AffectedLine::missedBranches).sum();
-    }
+    int missedChangedBranches;
   }
 
   /** How much of the report to print, past which the reader is sent to the full report. */
@@ -222,9 +218,11 @@ final class DiffCoverageReport {
    * {@code comparingInt(a).reversed().thenComparingInt(b).reversed()} orders by a ascending.
    */
   private static final Comparator<FileCoverage> BY_WORK_LEFT =
-      Comparator.comparingInt(FileCoverage::uncoveredChangedLines)
+      Comparator.comparingInt((FileCoverage file) -> file.uncoveredChangedLines)
           .reversed()
-          .thenComparing(Comparator.comparingInt(FileCoverage::missedChangedBranches).reversed())
+          .thenComparing(
+              Comparator.comparingInt((FileCoverage file) -> file.missedChangedBranches)
+                  .reversed())
           .thenComparing(Comparator.comparingInt((FileCoverage file) -> file.executableLines)
               .reversed())
           .thenComparing(file -> file.path);
@@ -251,7 +249,7 @@ final class DiffCoverageReport {
     DiffCoverageReport report = new DiffCoverageReport();
     for (Map.Entry<String, NavigableSet<Integer>> entry : new TreeMap<>(changed).entrySet()) {
       String path = entry.getKey();
-      String key = sourceFileKey(path, sourceRoots);
+      String key = ChangedLines.underSourceRoot(path, sourceRoots);
       if (key == null) {
         continue;
       }
@@ -282,7 +280,15 @@ final class DiffCoverageReport {
                 counters.coveredBranches,
                 counters.totalBranches,
                 quote(source));
-        (IGNORE_MARKER.matcher(source).find() ? file.acknowledged : file.affected).add(affected);
+        if (IGNORE_MARKER.matcher(source).find()) {
+          file.acknowledged.add(affected);
+          continue;
+        }
+        file.affected.add(affected);
+        if (!affected.executed()) {
+          file.uncoveredChangedLines++;
+        }
+        file.missedChangedBranches += affected.missedBranches();
       }
       if (file.executableLines > 0) {
         report.measured.add(file);
@@ -557,28 +563,7 @@ final class DiffCoverageReport {
 
   /** Returns whether any of the paths sits under one of the source roots. */
   static boolean reaches(List<String> sourceRoots, Collection<String> paths) {
-    return paths.stream().anyMatch(path -> sourceFileKey(path, sourceRoots) != null);
-  }
-
-  /**
-   * Returns the path with its source root stripped, or null where no root contains it.
-   *
-   * <p>The longest matching root wins, since a root nested inside another would otherwise leave the
-   * outer root's extra directories in the key and match no package JaCoCo reports.
-   *
-   * <p>A root's separators are normalised first. The paths come from a git diff and always use
-   * {@code /}, while a root built from a {@code java.nio.file.Path} uses the platform separator, so
-   * on Windows no root would match and every changed file would leave the report.
-   */
-  private static String sourceFileKey(String path, List<String> sourceRoots) {
-    String longest = null;
-    for (String sourceRoot : sourceRoots) {
-      String root = sourceRoot.replace('\\', '/');
-      String prefix = root.endsWith("/") ? root : root + "/";
-      if (path.startsWith(prefix) && (longest == null || prefix.length() > longest.length())) {
-        longest = prefix;
-      }
-    }
-    return longest == null ? null : path.substring(longest.length());
+    return paths.stream()
+        .anyMatch(path -> ChangedLines.underSourceRoot(path, sourceRoots) != null);
   }
 }

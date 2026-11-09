@@ -31,13 +31,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The decisions the task makes before and after the counts: which ref the diff is taken against,
+ * The decisions the report makes before and after the counts: which ref the diff is taken against,
  * and which sources the counts can still be trusted for.
  *
- * <p>{@link DiffCoverageTaskRunTest} drives the task itself through a synthetic project; what is
+ * <p>DiffCoverageTaskRunTest, in the Gradle plugin, drives the whole report through a synthetic project; what is
  * here is the logic those runs carry, tested on its own.
  */
-class DiffCoverageTaskTest {
+class DiffCoverageTest {
 
   private static final String MEASURED = "nullaway/src/main/java/Sample.java";
   private static final long EARLIER = 1_000_000_000L;
@@ -54,7 +54,7 @@ class DiffCoverageTaskTest {
   }
 
   private List<String> staleAmong(String... measuredPaths) throws IOException {
-    return DiffCoverageTask.staleSources(
+    return DiffCoverage.staleSources(
         directory.toFile(), List.of(measuredPaths), List.of(writeAt("report.xml", EARLIER)));
   }
 
@@ -172,7 +172,7 @@ class DiffCoverageTaskTest {
       writeAt(MEASURED, LATER - 1000);
       assertEquals(
           List.of(),
-          DiffCoverageTask.staleSources(
+          DiffCoverage.staleSources(
               directory.toFile(), List.of(MEASURED), List.of(older, newer)));
     }
   }

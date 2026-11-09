@@ -17,7 +17,6 @@ package io.github.cribrodev;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.lang.reflect.Method;
@@ -25,7 +24,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Properties;
 import java.util.concurrent.Callable;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -81,17 +79,14 @@ public abstract class CribroPlugin implements Plugin<Project> {
   static final Attribute<Boolean> APPLIES_JAVA =
       Attribute.of("io.github.cribrodev.appliesJava", Boolean.class);
 
-  static final String JACOCO_VERSION = "0.8.16";
-
-  /** The version of this jar and of the PIT it was built against, from {@code cribro.properties}. */
-  private static final Properties VERSIONS = versions();
+  static final String JACOCO_VERSION = Versions.jacoco();
 
   static String version() {
-    return VERSIONS.getProperty("cribro");
+    return Versions.cribro();
   }
 
   static String pitestVersion() {
-    return VERSIONS.getProperty("pitest");
+    return Versions.pitest();
   }
 
   @Override
@@ -312,7 +307,7 @@ public abstract class CribroPlugin implements Plugin<Project> {
     String pitestJunit5Version =
         providers
             .gradleProperty("cribro.pitestJunit5PluginVersion")
-            .getOrElse(VERSIONS.getProperty("pitestJunit5Plugin"));
+            .getOrElse(Versions.pitestJunit5Plugin());
     pitest.defaultDependencies(
         deps -> {
           deps.add(
@@ -434,20 +429,6 @@ public abstract class CribroPlugin implements Plugin<Project> {
     }
   }
 
-  private static Properties versions() {
-    Properties versions = new Properties();
-    try (InputStream in =
-        CribroPlugin.class.getResourceAsStream("cribro.properties")) {
-      if (in == null) {
-        throw new IllegalStateException("cribro.properties is missing from the plugin jar");
-      }
-      versions.load(in);
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
-    return versions;
-  }
-
   /** Compares dotted numeric versions; a non-numeric part, as in a snapshot, counts as 0. */
   static int compareVersions(String a, String b) {
     String[] left = a.split("[.-]");
@@ -472,14 +453,13 @@ public abstract class CribroPlugin implements Plugin<Project> {
     }
   }
 
-  /** Returns the directory holding {@code .git}, which git prints the paths of a diff against. */
+  /**
+   * Returns the directory holding {@code .git}, which git prints the paths of a diff against, or
+   * {@code start} where no directory above it holds one.
+   */
   static File repositoryRoot(File start) {
-    for (File dir = start.getAbsoluteFile(); dir != null; dir = dir.getParentFile()) {
-      if (new File(dir, ".git").exists()) {
-        return dir;
-      }
-    }
-    return start.getAbsoluteFile();
+    File root = Git.findRepositoryRoot(start);
+    return root != null ? root : start.getAbsoluteFile();
   }
 
   private static Provider<Integer> intProperty(

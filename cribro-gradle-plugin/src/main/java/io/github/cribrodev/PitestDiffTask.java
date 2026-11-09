@@ -198,7 +198,7 @@ public abstract class PitestDiffTask extends DefaultTask {
           "PIT failed with exit code "
               + result.getExitValue()
               + ". The end of "
-              + DiffCoverageTask.relativize(root, log)
+              + SourceLines.relativize(root, log)
               + ":\n"
               + String.join("\n", lines.subList(Math.max(0, lines.size() - LOG_TAIL), lines.size()))
               + (leftOut == null ? "" : "\n" + leftOut));
@@ -224,7 +224,7 @@ public abstract class PitestDiffTask extends DefaultTask {
                 getMaxLinesPerFile().get(),
                 getMaxLines().get(),
                 getShowAll().get(),
-                List.of(DiffCoverageTask.relativize(root, new File(reportDir, "index.html")))));
+                List.of(SourceLines.relativize(root, new File(reportDir, "index.html")))));
   }
 
   /** Returns the PIT command line for the given classes. */

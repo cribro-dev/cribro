@@ -18,8 +18,6 @@ package io.github.cribrodev;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableSet;
-import java.util.TreeMap;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.ListProperty;
@@ -59,10 +57,10 @@ public abstract class ChangedLinesTask extends DefaultTask {
 
   @TaskAction
   public void write() throws IOException {
-    ChangedLines diff = ChangedLines.measure(getGit().get(), getBaseRef().getOrNull());
+    ChangedLines diff = getGit().get().git().changedLines(getBaseRef().getOrNull());
     if (diff == null) {
       getLogger().warn("No base ref resolved, so no line counts as changed. {}",
-          ChangedLines.NO_BASE_HINT);
+          ChangedLines.noBaseHint("-P"));
       ChangedLinesFile.write(
           getOutputFile().get().getAsFile().toPath(), List.of("no base ref resolved"), Map.of());
       return;
@@ -73,25 +71,6 @@ public abstract class ChangedLinesTask extends DefaultTask {
     ChangedLinesFile.write(
         getOutputFile().get().getAsFile().toPath(),
         List.of("against " + diff.ref() + " (" + diff.shortCommit() + ")"),
-        underSourceRoots(diff.lines(), getSourceRoots().get()));
-  }
-
-  /**
-   * Returns the entries whose path lies under one of the source roots, keyed by the path relative
-   * to that root.
-   */
-  static Map<String, NavigableSet<Integer>> underSourceRoots(
-      Map<String, NavigableSet<Integer>> changed, List<String> sourceRoots) {
-    Map<String, NavigableSet<Integer>> relative = new TreeMap<>();
-    for (Map.Entry<String, NavigableSet<Integer>> entry : changed.entrySet()) {
-      for (String root : sourceRoots) {
-        String prefix = root.endsWith("/") ? root : root + "/";
-        if (entry.getKey().startsWith(prefix)) {
-          relative.put(entry.getKey().substring(prefix.length()), entry.getValue());
-          break;
-        }
-      }
-    }
-    return relative;
+        ChangedLines.underSourceRoots(diff.lines(), getSourceRoots().get()));
   }
 }
