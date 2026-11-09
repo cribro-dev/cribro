@@ -2,6 +2,7 @@ plugins {
     id("cribro.java")
     `java-gradle-plugin`
     alias(libs.plugins.gradle.plugin.publish)
+    id("cribro.signing")
 }
 
 // cribro-core is merged into this jar rather than published as its dependency: the init script loads

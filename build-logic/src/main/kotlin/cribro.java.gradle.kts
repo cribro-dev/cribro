@@ -6,7 +6,9 @@ plugins {
 }
 
 group = "io.github.cribro-dev"
-version = "0.1.0-SNAPSHOT"
+// -Prelease (or -Prelease=true) builds the version in gradle.properties; any other build is its snapshot.
+val release = providers.gradleProperty("release").map { it.isEmpty() || it.toBoolean() }.getOrElse(false)
+version = providers.gradleProperty("cribro.version").get() + if (release) "" else "-SNAPSHOT"
 
 repositories {
     mavenCentral()

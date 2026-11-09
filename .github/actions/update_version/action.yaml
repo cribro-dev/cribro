@@ -1,0 +1,44 @@
+name: Set the version in gradle.properties
+description: Commits cribro.version=<version> to gradle.properties and pushes it to the branch the workflow runs on
+inputs:
+  version:
+    required: true
+    description: The version to set, x.y.z
+  token:
+    required: true
+    description: A token that may push to the branch
+
+runs:
+  using: composite
+  steps:
+    - name: Update the worktree
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.ref_name }}
+        token: ${{ inputs.token }}
+        persist-credentials: true
+
+    - name: Set the version to ${{ inputs.version }}
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        REF_NAME: ${{ github.ref_name }}
+      # language=bash
+      run: |
+        VERSION_LINE="cribro.version=$VERSION"
+        if grep -Fqx -- "$VERSION_LINE" gradle.properties; then
+          echo "gradle.properties already has $VERSION_LINE"
+          exit 0
+        fi
+
+        sed -i "s/^cribro\.version=.*$/${VERSION_LINE}/" gradle.properties
+        git add gradle.properties
+        git commit -m "Set the version to $VERSION" -m "[skip ci]"
+        git push origin "$REF_NAME"
+
+    - name: Drop the credentials from the worktree
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.ref_name }}
+        token: ${{ github.token }}
+        persist-credentials: false

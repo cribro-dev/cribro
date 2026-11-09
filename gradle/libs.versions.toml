@@ -11,6 +11,8 @@ maven-resolver = "1.9.27"
 [libraries]
 # Prints failed tests with their stack traces, and marks them for GitHub Actions.
 gradle-extensions-plugin = "com.github.vlsi.gradle:gradle-extensions-plugin:4.0.0"
+# Uploads the publications to Maven Central through the Central Portal API.
+nmcp-plugin = "com.gradleup.nmcp:nmcp:1.6.2"
 junit-bom = "org.junit:junit-bom:5.14.4"
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
