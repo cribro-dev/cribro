@@ -39,7 +39,7 @@ import org.gradle.api.provider.Provider;
  * Applies {@link CribroPlugin} to every project of the build, and registers the {@code cribro}
  * task, which prints the guide to the tasks, on the root project.
  *
- * <p>A build applies it in {@code settings.gradle(.kts)} as {@code io.github.cribrodev.cribro}; the
+ * <p>A build applies it in {@code settings.gradle(.kts)} as {@code io.github.cribro-dev.cribro}; the
  * init script applies it to a build that does not.
  */
 public abstract class CribroSettingsPlugin implements Plugin<Settings> {
@@ -48,7 +48,7 @@ public abstract class CribroSettingsPlugin implements Plugin<Settings> {
    * The plugin ID. The init script checks the same literal to leave a build that applies cribro
    * alone.
    */
-  public static final String ID = "io.github.cribrodev.cribro";
+  public static final String ID = "io.github.cribro-dev.cribro";
 
   /**
    * The extra property of {@link Settings} that holds the path of the init script that applied

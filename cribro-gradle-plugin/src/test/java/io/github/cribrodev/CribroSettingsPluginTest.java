@@ -124,7 +124,7 @@ class CribroSettingsPluginTest {
         Files.readString(dist().resolve("cribro.init.gradle"), UTF_8);
 
     assertEquals(
-        List.of("            classpath \"io.github.cribrodev:cribro-gradle-plugin:"
+        List.of("            classpath \"io.github.cribro-dev:cribro-gradle-plugin:"
             + CribroPlugin.version() + "\""),
         initScript.lines().filter(line -> line.contains("cribro-gradle-plugin:")).toList());
   }
@@ -135,7 +135,7 @@ class CribroSettingsPluginTest {
    */
   @Test
   void theInitScriptLeavesABuildThatAppliesCribroAlone() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
     Path initScript = installInitScript();
 
     BuildResult result = run(initScript, "cribro");
@@ -145,7 +145,7 @@ class CribroSettingsPluginTest {
 
   @Test
   void theGuideListsOnlyTheJavaProjects() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
 
     BuildResult result = run(null, "cribro");
 
@@ -159,7 +159,7 @@ class CribroSettingsPluginTest {
 
   @Test
   void theSettingsPluginAddsTheTasksToTheJavaProject() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
 
     assertProjectTasks(run(null, "--dry-run", ":app:changedLines", ":app:diffCoverage", ":app:pitestDiff"));
   }
@@ -180,7 +180,7 @@ class CribroSettingsPluginTest {
    */
   @Test
   void aQualifiedCribroListsEveryJavaProjectUnderConfigureOnDemand() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
     Files.writeString(build.resolve("docs/build.gradle"), "evaluationDependsOn(':')\n", UTF_8);
 
     BuildResult result = run(null, "--configure-on-demand", ":cribro");
@@ -193,7 +193,7 @@ class CribroSettingsPluginTest {
   /** An unqualified task name makes Gradle configure every project to look for the task. */
   @Test
   void anUnqualifiedCribroListsEveryJavaProjectUnderConfigureOnDemand() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
 
     BuildResult result = run(null, "--configure-on-demand", "cribro");
 
@@ -274,7 +274,7 @@ class CribroSettingsPluginTest {
         build.resolve("settings.gradle"),
         """
         plugins {
-          id 'io.github.cribrodev.cribro'
+          id 'io.github.cribro-dev.cribro'
         }
         rootProject.name = 'sample'
         include 'client:common', 'server:common'
@@ -306,7 +306,7 @@ class CribroSettingsPluginTest {
         build.resolve("settings.gradle"),
         """
         plugins {
-          id 'io.github.cribrodev.cribro'
+          id 'io.github.cribro-dev.cribro'
         }
         rootProject.name = 'common'
         include 'lib:common'
@@ -331,7 +331,7 @@ class CribroSettingsPluginTest {
 
   @Test
   void aRootProjectThatAppliesJavaIsListedUnderIsolatedProjects() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
     Files.writeString(build.resolve("build.gradle"), "plugins { id 'java' }\n", UTF_8);
 
     BuildResult result = run(null, "-Dorg.gradle.unsafe.isolated-projects=true", "cribro");
@@ -347,7 +347,7 @@ class CribroSettingsPluginTest {
    */
   @Test
   void aProjectWhoseCribroVariantCannotBeConsumedFailsTheGuide() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
     Files.writeString(
         build.resolve("app/build.gradle"),
         """
@@ -373,7 +373,7 @@ class CribroSettingsPluginTest {
   /** A project with no variant to select fails the guide rather than drop out of the list. */
   @Test
   void aProjectWithNoVariantToConsumeFailsTheGuide() throws IOException {
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
     Files.writeString(
         build.resolve("docs/build.gradle"),
         "configurations.cribroProjectElements.canBeConsumed = false\n",
@@ -420,7 +420,7 @@ class CribroSettingsPluginTest {
   @Test
   void aSnapshotInitScriptWithoutItsJarLeavesABuildThatAppliesCribroAlone() throws IOException {
     assumeTrue(CribroPlugin.version().endsWith("-SNAPSHOT"), "the build's version is a release");
-    writeBuild("  id 'io.github.cribrodev.cribro'\n");
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
     Path initScript = installInitScriptWithoutJar();
 
     BuildResult result = run(initScript, "cribro");

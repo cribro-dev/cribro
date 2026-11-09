@@ -5,7 +5,7 @@ plugins {
     id("com.github.vlsi.gradle-extensions")
 }
 
-group = "io.github.cribrodev"
+group = "io.github.cribro-dev"
 version = "0.1.0-SNAPSHOT"
 
 repositories {
