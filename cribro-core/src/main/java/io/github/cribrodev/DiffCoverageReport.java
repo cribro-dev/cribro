@@ -301,7 +301,7 @@ final class DiffCoverageReport {
   }
 
   /** Returns the source line as the report quotes it: stripped, and cut to a width that fits. */
-  private static String quote(String source) {
+  static String quote(String source) {
     String stripped = source.strip();
     return stripped.length() <= QUOTE_WIDTH
         ? stripped

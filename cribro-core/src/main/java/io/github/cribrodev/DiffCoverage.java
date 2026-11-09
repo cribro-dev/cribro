@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Prints which of the lines a branch changed a test run executed, for one module.
@@ -75,6 +77,7 @@ public final class DiffCoverage {
   private boolean showAll;
   private File outputFile;
   private Long measuredAt;
+  private Function<List<String>, String> testFilter = DiffCoverage::gradleTestFilter;
 
   private DiffCoverage(Git git) {
     this.git = git;
@@ -155,6 +158,19 @@ public final class DiffCoverage {
   }
 
   /**
+   * How the build tool narrows a test run to some test methods, given each as {@code
+   * pkg.Class.method}; the Gradle form, {@code --tests 'pkg.Class.method'}, is the default.
+   */
+  public DiffCoverage testFilter(Function<List<String>, String> testFilter) {
+    this.testFilter = testFilter;
+    return this;
+  }
+
+  static String gradleTestFilter(List<String> tests) {
+    return tests.stream().map(test -> "--tests '" + test + "'").collect(Collectors.joining(" "));
+  }
+
+  /**
    * Returns the text this run prints. Where the change reached none of the module, that is only
    * the lines {@link ChangedLines#unreadable()} returns, naming the untracked files this JVM could
    * not read, often none.
@@ -199,23 +215,33 @@ public final class DiffCoverage {
       Set<String> keys = ChangedLines.underSourceRoots(changed, sourceRoots).keySet();
       lines = JacocoLines.read(existing, keys::contains);
     }
-    DiffCoverageReport report =
-        DiffCoverageReport.measure(changed, sourceRoots, lines, SourceLines.under(repository));
+    SourceLines sources = SourceLines.under(repository);
+    DiffCoverageReport report = DiffCoverageReport.measure(changed, sourceRoots, lines, sources);
+    ExposedCodeReport exposed =
+        ExposedCodeReport.measure(
+            ExposedCode.find(repository, changed, sourceRoots), sourceRoots, lines, sources);
+    Function<List<ExposedCode.TestMethod>, String> tests =
+        methods ->
+            testFilter.apply(
+                methods.stream().map(ExposedCode.TestMethod::toString).collect(Collectors.toList()));
     String scope =
         "against " + diff.ref() + " (" + diff.shortCommit() + "), from " + scopeDescription;
     List<String> stale =
         measuredAt != null
             ? staleSources(repository, report.measuredPaths(), measuredAt)
             : staleSources(repository, report.measuredPaths(), existing);
-    String full = report.render(scope, filtered, stale, DiffCoverageReport.Limits.NONE);
-    String console =
+    DiffCoverageReport.Limits limits =
         showAll
-            ? full
-            : report.render(
-                scope,
-                filtered,
-                stale,
-                new DiffCoverageReport.Limits(maxFiles, maxLinesPerFile, maxLinesTotal));
+            ? DiffCoverageReport.Limits.NONE
+            : new DiffCoverageReport.Limits(maxFiles, maxLinesPerFile, maxLinesTotal);
+    String full =
+        withExposed(
+            report.render(scope, filtered, stale, DiffCoverageReport.Limits.NONE),
+            exposed.render(scopeDescription, filtered, tests, DiffCoverageReport.Limits.NONE));
+    String console =
+        withExposed(
+            report.render(scope, filtered, stale, limits),
+            exposed.render(scopeDescription, filtered, tests, limits));
     String text = console.isEmpty() ? console : withReportPaths(repository, existing, console, full);
     if (unreadable.isEmpty()) {
       return text;
@@ -224,6 +250,11 @@ public final class DiffCoverage {
     // is a change it did reach and could not measure, so it is said either way.
     String notes = String.join("\n", unreadable);
     return text.isEmpty() ? notes : notes + "\n" + text;
+  }
+
+  /** Appends the exposed-code block to a report that printed anything at all. */
+  private static String withExposed(String report, String exposed) {
+    return report.isEmpty() || exposed.isEmpty() ? report : report + "\n\n" + exposed;
   }
 
   /**
