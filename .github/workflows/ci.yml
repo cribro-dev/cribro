@@ -76,7 +76,7 @@ jobs:
         if: failure()
         with:
           name: test-reports ${{ matrix.name }}
-          path: build/reports/tests/
+          path: '*/build/reports/tests/'
 
   jdk11:
     name: Gradle 8.14.3 on JDK 11
@@ -101,4 +101,4 @@ jobs:
       - name: Run the sample on JDK 11
         env:
           JAVA_HOME: ${{ steps.jdk11.outputs.path }}
-        run: .github/jdk11-sample/run.sh gradle build/dist
+        run: .github/jdk11-sample/run.sh gradle cribro-gradle-plugin/build/dist

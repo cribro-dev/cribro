@@ -1,1 +1,7 @@
-rootProject.name = "cribro-gradle-plugin"
+pluginManagement {
+    includeBuild("build-logic")
+}
+
+rootProject.name = "cribro"
+
+include("cribro-gradle-plugin")

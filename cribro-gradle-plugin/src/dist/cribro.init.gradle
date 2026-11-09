@@ -31,7 +31,7 @@ settingsEvaluated { settings ->
     }
     if (!new File(initScript.parentFile, "cribro.jar").file && "@version@".endsWith("-SNAPSHOT")) {
         throw new GradleException("No cribro.jar beside ${initScript}, and cribro @version@ is a development build " +
-            "that the Gradle Plugin Portal does not host. Copy build/dist/cribro.jar of the cribro build into " +
+            "that the Gradle Plugin Portal does not host. Copy cribro-gradle-plugin/build/dist/cribro.jar of the cribro build into " +
             "${initScript.parentFile}.")
     }
     settings.extensions.extraProperties.set("cribro.initScript", initScript.path)

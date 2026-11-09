@@ -409,7 +409,7 @@ class CribroSettingsPluginTest {
     assertEquals(
         "No cribro.jar beside " + initScript + ", and cribro " + CribroPlugin.version()
             + " is a development build that the Gradle Plugin Portal does not host. Copy"
-            + " build/dist/cribro.jar of the cribro build into " + home + ".",
+            + " cribro-gradle-plugin/build/dist/cribro.jar of the cribro build into " + home + ".",
         result.getOutput().lines()
             .filter(line -> line.contains("No cribro.jar beside"))
             .findFirst()
