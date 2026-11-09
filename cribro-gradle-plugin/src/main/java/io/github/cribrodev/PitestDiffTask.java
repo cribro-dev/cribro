@@ -19,13 +19,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import javax.inject.Inject;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
@@ -61,13 +58,7 @@ import org.gradle.process.ExecResult;
 @UntrackedTask(because = "the working tree and the branch decide the result, and Gradle tracks neither")
 public abstract class PitestDiffTask extends DefaultTask {
 
-  private static final String MAIN_CLASS =
-      "org.pitest.mutationtest.commandline.MutationCoverageReport";
-
-  /** How many lines of {@code pit.log} a failure prints. */
-  private static final int LOG_TAIL = 30;
-
-  /** PIT and the jar of this plugin. */
+  /** PIT and the jar of this plugin, which PIT's process starts with. */
   @Classpath
   public abstract ConfigurableFileCollection getPitestClasspath();
 
@@ -80,7 +71,10 @@ public abstract class PitestDiffTask extends DefaultTask {
   @PathSensitive(PathSensitivity.NONE)
   public abstract RegularFileProperty getChangedLinesFile();
 
-  /** The classpath the tests run with, the main classes included. */
+  /**
+   * The classpath the tests run with, the main classes included, and a JUnit Platform launcher
+   * where the tests bring none.
+   */
   @Classpath
   public abstract ConfigurableFileCollection getTestRuntimeClasspath();
 
@@ -162,11 +156,25 @@ public abstract class PitestDiffTask extends DefaultTask {
     // first: a report found after the run is this run's.
     getFileSystemOperations().delete(spec -> spec.delete(reportDir));
     Files.createDirectories(reportDir.toPath());
-    File log = new File(reportDir, "pit.log");
+    File log = new File(reportDir, PitestRun.LOG);
+    PitestRun pit =
+        new PitestRun()
+            .targetClasses(ChangedLinesFile.targetClasses(ChangedLinesFile.read(changedLines)))
+            .reportDir(reportDir)
+            .targetTests(getTargetTests().getOrNull())
+            .mutableCodePaths(List.copyOf(getMainClassesDirs().getFiles()))
+            .sourceDirs(List.copyOf(getMainSourceDirs().getFiles()))
+            .classPath(List.copyOf(getTestRuntimeClasspath().getFiles()))
+            .jvmArgs(getTestJvmArgs().get())
+            .mutators(getMutators().get())
+            .threads(getThreads().get())
+            .timeoutConst(getTimeoutConst().get())
+            .changedLines(changedLines.toFile())
+            // javac compiles in the Gradle JVM's charset where the build sets no encoding.
+            .sourceEncoding(Charset.defaultCharset().name());
+    List<String> arguments = pit.arguments();
     ExecResult result;
     try (OutputStream out = new FileOutputStream(log)) {
-      List<String> arguments =
-          arguments(ChangedLinesFile.targetClasses(ChangedLinesFile.read(changedLines)), reportDir);
       result =
           getExecOperations()
               .javaexec(
@@ -174,9 +182,8 @@ public abstract class PitestDiffTask extends DefaultTask {
                     spec.setExecutable(
                         getJavaLauncher().get().getExecutablePath().getAsFile().getAbsolutePath());
                     spec.setClasspath(getPitestClasspath());
-                    spec.getMainClass().set(MAIN_CLASS);
-                    spec.systemProperty(
-                        ChangedLinesFile.PITEST_PROPERTY, changedLines.toAbsolutePath().toString());
+                    spec.getMainClass().set(PitestRun.MAIN_CLASS);
+                    spec.systemProperties(pit.systemProperties());
                     spec.setArgs(arguments);
                     spec.setStandardOutput(out);
                     spec.setErrorOutput(out);
@@ -186,78 +193,25 @@ public abstract class PitestDiffTask extends DefaultTask {
     File root = getRepositoryRoot().get().getAsFile();
     // A test that depends on a left-out argument may fail in PIT's first run and be left out, or
     // make PIT fail, so the reader needs to know the run differed from the test task.
-    String leftOut =
-        getLeftOutJvmArgs().get().isEmpty()
-            ? null
-            : "PIT ran the tests without these JVM arguments of the test task, since it splits"
-                + " arguments at commas and whitespace: "
-                + String.join(" ", getLeftOutJvmArgs().get());
+    String leftOut = PitestRun.leftOutMessage(getLeftOutJvmArgs().get(), "the test task");
     if (result.getExitValue() != 0) {
-      List<String> lines = Files.readAllLines(log.toPath());
       throw new GradleException(
-          "PIT failed with exit code "
-              + result.getExitValue()
-              + ". The end of "
-              + SourceLines.relativize(root, log)
-              + ":\n"
-              + String.join("\n", lines.subList(Math.max(0, lines.size() - LOG_TAIL), lines.size()))
-              + (leftOut == null ? "" : "\n" + leftOut));
+          PitestRun.failureMessage(result.getExitValue(), root, log, leftOut));
     }
-    String header = ChangedLinesFile.readHeader(changedLines);
-    String tests =
-        getTargetTests().isPresent() ? "tests matching " + getTargetTests().get() : "all tests";
-    PitestSurvivors report =
-        PitestSurvivors.read(
-            (header == null ? "against an unknown base" : header) + ", " + tests,
-            new File(reportDir, MutantsFile.NAME),
-            root,
-            List.copyOf(getMainSourceDirs().getFiles()));
     if (leftOut != null) {
       getLogger().quiet(leftOut);
     }
     getLogger()
         .quiet(
-            report.writeAndRender(
+            PitestRun.report(
+                changedLines.toFile(),
+                reportDir,
+                getTargetTests().getOrNull(),
                 root,
-                new File(reportDir, "survivors.txt"),
+                List.copyOf(getMainSourceDirs().getFiles()),
                 getMaxFiles().get(),
                 getMaxLinesPerFile().get(),
                 getMaxLines().get(),
-                getShowAll().get(),
-                List.of(SourceLines.relativize(root, new File(reportDir, "index.html")))));
-  }
-
-  /** Returns the PIT command line for the given classes. */
-  private List<String> arguments(List<String> targetClasses, File reportDir) {
-    Map<String, String> options = new LinkedHashMap<>();
-    options.put("reportDir", reportDir.getAbsolutePath());
-    options.put("targetClasses", String.join(",", targetClasses));
-    options.put("targetTests", getTargetTests().getOrElse("*"));
-    // Only the main output is mutated, so a glob cannot reach a test class of the same name.
-    options.put("mutableCodePaths", paths(getMainClassesDirs()));
-    options.put("sourceDirs", paths(getMainSourceDirs()));
-    options.put("classPath", paths(getTestRuntimeClasspath()));
-    options.put("jvmArgs", getTestJvmArgs().get());
-    options.put("mutators", getMutators().get());
-    options.put("threads", getThreads().get().toString());
-    options.put("outputFormats", "HTML," + MutantsFile.LISTENER_FORMAT);
-    options.put("timestampedReports", "false");
-    // A changed line can be a comment or a declaration with no instruction to mutate.
-    options.put("failWhenNoMutations", "false");
-    options.put("timeoutConst", getTimeoutConst().get().toString());
-    // PIT runs every test, including those the test task's filter excludes, and refuses to start
-    // when one fails before any mutation. A test failing there is left out instead.
-    options.put("skipFailingTests", "true");
-    List<String> arguments = new ArrayList<>();
-    options.forEach(
-        (name, value) -> {
-          arguments.add("--" + name);
-          arguments.add(value);
-        });
-    return arguments;
-  }
-
-  private static String paths(ConfigurableFileCollection files) {
-    return files.getFiles().stream().map(File::getAbsolutePath).collect(Collectors.joining(","));
+                getShowAll().get()));
   }
 }

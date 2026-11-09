@@ -342,18 +342,19 @@ public abstract class CribroPlugin implements Plugin<Project> {
               // PIT runs the tests on the JVM the `test` task runs them on.
               task.getJavaLauncher().set(t.getJavaLauncher());
               task.getPitestClasspath().from(pitest);
-              // pitest-junit5-plugin leaves the launcher to the tests, and a Gradle 8 build may
-              // rely on the launcher Gradle injects into the test JVM, which PIT never sees.
-              Configuration testRuntime =
-                  project.getConfigurations().getByName(test.getRuntimeClasspathConfigurationName());
-              task.getPitestClasspath()
-                  .from(
-                      project.files(
-                          (Callable<Object>) () -> missingLauncher(project, testRuntime, t)));
               // This jar carries the changed-lines interceptor and the mutants listener.
               task.getPitestClasspath().from(pluginJar());
               task.getChangedLinesFile().set(changedLines.flatMap(ChangedLinesTask::getOutputFile));
               task.getTestRuntimeClasspath().from(test.getRuntimeClasspath());
+              // pitest-junit5-plugin leaves the launcher to the tests, and a Gradle 8 build may
+              // rely on the launcher Gradle injects into the test JVM, which PIT never sees. PIT
+              // starts the tests with this classpath and only its own plugins from its launch one.
+              Configuration testRuntime =
+                  project.getConfigurations().getByName(test.getRuntimeClasspathConfigurationName());
+              task.getTestRuntimeClasspath()
+                  .from(
+                      project.files(
+                          (Callable<Object>) () -> missingLauncher(project, testRuntime, t)));
               task.getMainClassesDirs().from(main.getOutput().getClassesDirs());
               task.getMainSourceDirs().from(main.getJava().getSrcDirs());
               task.getReportDir()
