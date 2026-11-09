@@ -4,11 +4,33 @@ plugins {
     alias(libs.plugins.gradle.plugin.publish)
 }
 
+// cribro-core is merged into this jar rather than published as its dependency: the init script loads
+// the plugin as one jar, and PIT loads the interceptor from it.
+val bundled = configurations.dependencyScope("bundled") {
+    description = "Projects whose classes are merged into the plugin jar"
+}
+val bundledClasspath = configurations.resolvable("bundledClasspath") {
+    extendsFrom(bundled.get())
+    isTransitive = false
+}
+
 dependencies {
-    // The PIT interceptor and listener run inside PIT, which supplies these classes; the plugin
-    // jar itself has no runtime dependency beyond the Gradle API.
-    compileOnly(libs.pitest.entry)
-    testImplementation(libs.pitest.entry)
+    bundled(project(":cribro-core"))
+    compileOnly(project(":cribro-core"))
+    testImplementation(project(":cribro-core"))
+}
+
+tasks.jar {
+    // The callable alone hides that the jars are task outputs, so the dependency is stated.
+    dependsOn(bundledClasspath)
+    from({ bundledClasspath.get().map { zipTree(it) } }) {
+        exclude("META-INF/MANIFEST.MF")
+    }
+}
+
+// TestKit loads the plugin from the merged jar, the one that ships.
+tasks.pluginUnderTestMetadata {
+    pluginClasspath.setFrom(tasks.jar)
 }
 
 gradlePlugin {
@@ -26,18 +48,6 @@ gradlePlugin {
             tags = listOf("coverage", "jacoco", "pitest", "mutation-testing", "diff-coverage")
         }
     }
-}
-
-val versions by tasks.registering(WriteProperties::class) {
-    description = "Writes the cribro and PIT versions that the plugin reads at run time."
-    destinationFile = layout.buildDirectory.file("generated/versions/io/github/cribrodev/cribro.properties")
-    property("cribro", version.toString())
-    property("pitest", libs.versions.pitest.asProvider())
-    property("pitestJunit5Plugin", libs.versions.pitest.junit5.plugin)
-}
-
-sourceSets.main {
-    resources.srcDir(files(layout.buildDirectory.dir("generated/versions")).builtBy(versions))
 }
 
 // The init script names the plugin version it resolves when no cribro.jar lies beside it.

@@ -193,6 +193,27 @@ class JacocoLinesTest {
     }
   }
 
+  @Test
+  void aReportReadForSomeFilesKeepsOnlyThoseFiles() throws IOException {
+    File file = directory.resolve("two-files.xml").toFile();
+    Files.writeString(
+        file.toPath(),
+        "<report name=\"test\"><package name=\"com/uber/nullaway\">"
+            + "<sourcefile name=\"Other.java\">"
+            + "<line nr=\"10\" mi=\"0\" ci=\"4\" mb=\"0\" cb=\"0\"/>"
+            + "</sourcefile>"
+            + "<sourcefile name=\"Sample.java\">"
+            + "<line nr=\"10\" mi=\"0\" ci=\"4\" mb=\"0\" cb=\"0\"/>"
+            + "</sourcefile></package></report>");
+
+    JacocoLines lines = JacocoLines.read(List.of(file), KEY::equals);
+
+    assertAll(
+        () -> assertTrue(lines.covers(KEY), "covers(" + KEY + ")"),
+        () -> assertNotNull(lines.get(KEY, 10), "get(" + KEY + ", 10)"),
+        () -> assertFalse(lines.covers("com/uber/nullaway/Other.java"), "covers(Other.java)"));
+  }
+
   @Nested
   class MalformedInput {
 

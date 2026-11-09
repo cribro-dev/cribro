@@ -4,4 +4,5 @@ pluginManagement {
 
 rootProject.name = "cribro"
 
+include("cribro-core")
 include("cribro-gradle-plugin")

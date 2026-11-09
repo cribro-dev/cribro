@@ -21,23 +21,33 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
+import java.util.TreeMap;
 import java.util.TreeSet;
-import org.gradle.api.GradleException;
 
 /**
  * The lines a branch changed, and the base ref they were measured against.
  *
  * <p>Diff coverage and diff mutation testing answer different questions about the same set of
  * lines, so both read it from here: a change to how the base is chosen moves both reports at once,
- * and {@code -Pcribro.diffBase} means the same thing to each of them.
+ * and {@code cribro.diffBase} means the same thing to each of them.
  */
-final class ChangedLines {
+public final class ChangedLines {
 
-  /** The Gradle property that names the base ref for every diff-based report. */
-  static final String BASE_PROPERTY = "cribro.diffBase";
+  /** The Gradle and Maven property that names the base ref for every diff-based report. */
+  public static final String BASE_PROPERTY = "cribro.diffBase";
 
-  static final String NO_BASE_HINT =
-      "Pass -P" + BASE_PROPERTY + "=<ref>, or set an upstream branch, or fetch origin/HEAD, origin/main, or origin/master.";
+  /**
+   * Returns what to do when no base ref resolves.
+   *
+   * @param flag how the build tool sets a property on its command line: {@code -P} for Gradle,
+   *     {@code -D} for Maven
+   */
+  public static String noBaseHint(String flag) {
+    return "Pass "
+        + flag
+        + BASE_PROPERTY
+        + "=<ref>, or set an upstream branch, or fetch origin/HEAD, origin/main, or origin/master.";
+  }
 
   private static final String[] UPSTREAM_NAME = {"rev-parse", "--abbrev-ref", "@{upstream}"};
 
@@ -60,22 +70,22 @@ final class ChangedLines {
   }
 
   /** Returns the ref the diff was taken against, as the caller or git named it. */
-  String ref() {
+  public String ref() {
     return ref;
   }
 
   /** Returns the merge base of {@link #ref()} and HEAD. */
-  String commit() {
+  public String commit() {
     return commit;
   }
 
   /** Returns the changed lines of every Java file, keyed by repository-relative path. */
-  Map<String, NavigableSet<Integer>> lines() {
+  public Map<String, NavigableSet<Integer>> lines() {
     return lines;
   }
 
   /** Returns a line naming each untracked file this JVM could not read. */
-  List<String> unreadable() {
+  public List<String> unreadable() {
     return unreadable;
   }
 
@@ -88,12 +98,12 @@ final class ChangedLines {
    * explicit ref, the upstream branch is tried, then the default branches of {@code origin}.
    *
    * @param explicit the ref the caller named, or null
-   * @throws GradleException where the explicit ref does not resolve, because diffing against
+   * @throws CribroException where the explicit ref does not resolve, because diffing against
    *     something else would report the wrong lines as changed
    */
-  static ChangedLines measure(GitService git, String explicit) {
+  public static ChangedLines measure(Git git, String explicit) {
     if (explicit != null && !resolves(git, explicit)) {
-      throw new GradleException(BASE_PROPERTY + " " + explicit + " does not resolve to a commit");
+      throw new CribroException(BASE_PROPERTY + " " + explicit + " does not resolve to a commit");
     }
     String upstream = git.outputOrNull(UPSTREAM_NAME);
     String branch = git.outputOrNull(BRANCH_NAME);
@@ -115,7 +125,7 @@ final class ChangedLines {
   }
 
   /** Returns the merge base abbreviated the way the reports print it. */
-  String shortCommit() {
+  public String shortCommit() {
     return commit.substring(0, Math.min(9, commit.length()));
   }
 
@@ -195,7 +205,7 @@ final class ChangedLines {
   }
 
   /** Returns whether the ref names a commit of this repository. */
-  private static boolean resolves(GitService git, String ref) {
+  private static boolean resolves(Git git, String ref) {
     return git.outputOrNull("rev-parse", "--verify", "--quiet", ref + "^{commit}") != null;
   }
 
@@ -209,7 +219,7 @@ final class ChangedLines {
    * @param unreadable collects a line naming each untracked file this JVM cannot decode
    */
   private static Map<String, NavigableSet<Integer>> changedLines(
-      GitService git, String base, List<String> unreadable) {
+      Git git, String base, List<String> unreadable) {
     String diff = git.output(diffCommand(base).toArray(new String[0]));
     Map<String, NavigableSet<Integer>> changed = UnifiedDiff.parse(diff);
     // core.quotePath is off here for the reason diffCommand gives: a quoted path names no file
@@ -246,5 +256,44 @@ final class ChangedLines {
       changed.put(path, lines);
     }
     return changed;
+  }
+
+  /**
+   * Returns the entries whose path lies under one of the source roots, keyed by the path relative
+   * to the innermost root that contains it, which is how {@link ChangedLinesFile} names a file for
+   * PIT.
+   */
+  public static Map<String, NavigableSet<Integer>> underSourceRoots(
+      Map<String, NavigableSet<Integer>> changed, List<String> sourceRoots) {
+    Map<String, NavigableSet<Integer>> relative = new TreeMap<>();
+    for (Map.Entry<String, NavigableSet<Integer>> entry : changed.entrySet()) {
+      String key = underSourceRoot(entry.getKey(), sourceRoots);
+      if (key != null) {
+        relative.put(key, entry.getValue());
+      }
+    }
+    return relative;
+  }
+
+  /**
+   * Returns the path with its source root stripped, or null where no root contains it.
+   *
+   * <p>The longest matching root wins, since a root nested inside another would otherwise leave the
+   * outer root's extra directories in the key and match no package JaCoCo reports.
+   *
+   * <p>A root's separators are normalised first. The paths come from a git diff and always use
+   * {@code /}, while a root built from a {@code java.nio.file.Path} uses the platform separator, so
+   * on Windows no root would match and every changed file would leave the report.
+   */
+  static String underSourceRoot(String path, List<String> sourceRoots) {
+    String longest = null;
+    for (String sourceRoot : sourceRoots) {
+      String root = sourceRoot.replace('\\', '/');
+      String prefix = root.endsWith("/") ? root : root + "/";
+      if (path.startsWith(prefix) && (longest == null || prefix.length() > longest.length())) {
+        longest = prefix;
+      }
+    }
+    return longest == null ? null : path.substring(longest.length());
   }
 }

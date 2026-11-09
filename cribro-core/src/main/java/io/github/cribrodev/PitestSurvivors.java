@@ -146,10 +146,12 @@ public final class PitestSurvivors {
   private static final class FileMutants {
     private final String path;
     private final List<Line> lines;
+    private final int mutantCount;
 
     FileMutants(String path, List<Line> lines) {
       this.path = path;
       this.lines = lines;
+      this.mutantCount = lines.stream().mapToInt(line -> line.mutants().size()).sum();
     }
 
     String path() {
@@ -161,7 +163,7 @@ public final class PitestSurvivors {
     }
 
     int mutantCount() {
-      return lines.stream().mapToInt(line -> line.mutants().size()).sum();
+      return mutantCount;
     }
   }
 
@@ -202,13 +204,20 @@ public final class PitestSurvivors {
     List<MutantsFile.Mutant> reported = MutantsFile.read(mutantsFile.toPath());
     Map<String, Integer> statusCounts = new LinkedHashMap<>();
     Map<String, TreeMap<Integer, List<Mutant>>> byFile = new HashMap<>();
+    // Every mutant of a line names the tests that reach the line, so the same test names repeat
+    // once per mutant, and each is shortened once.
+    Map<String, String> shortTestNames = new HashMap<>();
     for (MutantsFile.Mutant mutant : reported) {
       statusCounts.merge(mutant.status(), 1, Integer::sum);
       if (!isLive(mutant.status())) {
         continue;
       }
       Set<String> tests = new TreeSet<>();
-      mutant.tests().forEach(test -> tests.add(shortTestName(test)));
+      mutant.tests()
+          .forEach(
+              test ->
+                  tests.add(
+                      shortTestNames.computeIfAbsent(test, PitestSurvivors::shortTestName)));
       int packageEnd = mutant.mutatedClass().lastIndexOf('.');
       String relative =
           (packageEnd < 0
@@ -228,7 +237,7 @@ public final class PitestSurvivors {
     for (Map.Entry<String, TreeMap<Integer, List<Mutant>>> file : byFile.entrySet()) {
       File source = locate(sourceRoots, file.getKey());
       String path =
-          source == null ? file.getKey() : DiffCoverageTask.relativize(repository, source);
+          source == null ? file.getKey() : SourceLines.relativize(repository, source);
       List<Line> lines = new ArrayList<>();
       for (Map.Entry<Integer, List<Mutant>> line : file.getValue().entrySet()) {
         int number = line.getKey();
@@ -284,7 +293,7 @@ public final class PitestSurvivors {
       List<String> otherPaths)
       throws IOException {
     List<String> paths = new ArrayList<>();
-    paths.add(DiffCoverageTask.relativize(repository, outputFile));
+    paths.add(SourceLines.relativize(repository, outputFile));
     // A run that analyzed no mutant leaves no HTML report, and a path that names no file is left out.
     otherPaths =
         otherPaths.stream()

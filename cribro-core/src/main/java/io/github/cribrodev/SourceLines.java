@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -65,5 +66,16 @@ final class SourceLines {
     } catch (IOException | InvalidPathException e) {
       return List.of();
     }
+  }
+
+  /**
+   * Returns the path as the reader would type it: relative to the repository, with {@code /}
+   * between the names on every platform, as git prints paths.
+   */
+  public static String relativize(File repository, File file) {
+    Path root = repository.toPath().toAbsolutePath().normalize();
+    Path target = file.toPath().toAbsolutePath().normalize();
+    String path = target.startsWith(root) ? root.relativize(target).toString() : target.toString();
+    return path.replace(File.separatorChar, '/');
   }
 }

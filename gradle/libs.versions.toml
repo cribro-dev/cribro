@@ -2,6 +2,8 @@
 # The jar compiles against pitest-entry, and the plugin resolves the same PIT for the target build.
 pitest = "1.30.2"
 pitest-junit5-plugin = "1.2.3"
+# The JaCoCo the plugin applies to the tests.
+jacoco = "0.8.16"
 
 [libraries]
 # Prints failed tests with their stack traces, and marks them for GitHub Actions.

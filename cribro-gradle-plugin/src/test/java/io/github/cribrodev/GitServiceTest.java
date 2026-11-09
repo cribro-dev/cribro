@@ -18,9 +18,6 @@ package io.github.cribrodev;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -29,19 +26,18 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import org.gradle.api.GradleException;
 import org.gradle.api.Project;
 import org.gradle.testfixtures.ProjectBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * One git command runs once a build, and a failing one is told apart from an empty result.
+ * Every task of a build gets the same {@link Git}, so a git command runs once a build.
  *
  * <p>The cache is what makes the service worth registering: twelve modules ask the same questions
  * of one repository, and a second run of a command can only repeat its answer. It is asserted by
- * changing the repository between two identical calls, since a call that ran again would report the
- * new state.
+ * changing the repository between two identical calls through the registered service, since a call
+ * that ran again would report the new state.
  *
  * <p>Every command runs against a repository built here. The fixture that builds it switches the
  * system and global configuration off for its own processes, so that a setting on the machine
@@ -64,75 +60,18 @@ class GitServiceTest {
   }
 
   @Test
-  void aRepeatedCommandKeepsTheAnswerOfItsFirstRun() throws Exception {
+  void aRepeatedCommandKeepsTheAnswerOfItsFirstRunForTheBuild() throws Exception {
     repositoryWithOneCommit();
-    GitService git = service();
-    String first = git.output("rev-parse", "HEAD");
+    GitService service = service();
+    String first = service.git().output("rev-parse", "HEAD");
 
     commit("second");
-
-    assertEquals(first, git.output("rev-parse", "HEAD"), "rev-parse HEAD after a second commit");
-    assertNotEquals(first, head(), "the commit HEAD names after the second commit");
-  }
-
-  @Test
-  void aCommandIsKeyedByItsWholeArgumentList() throws Exception {
-    repositoryWithOneCommit();
-    GitService git = service();
-    git.output("rev-parse", "HEAD");
-
-    commit("second");
-
-    assertEquals(head(), git.output("rev-parse", "master"), "rev-parse master");
-  }
-
-  @Test
-  void aFailingCommandComesBackAsNullRatherThanAsEmptyOutput() throws Exception {
-    repositoryWithOneCommit();
-
-    assertNull(
-        service().outputOrNull("rev-parse", "--verify", "--quiet", "absent^{commit}"),
-        "a ref that does not resolve");
-  }
-
-  @Test
-  void aFailingCommandReportsWhatGitPrinted() throws Exception {
-    repositoryWithOneCommit();
-    GitService git = service();
-
-    GradleException thrown =
-        assertThrows(GradleException.class, () -> git.output("rev-parse", "absent"));
-
-    String prefix = "git rev-parse absent failed: ";
-    assertTrue(
-        thrown.getMessage().startsWith(prefix),
-        () -> "the command that failed: " + thrown.getMessage());
-    assertNotEquals(
-        "",
-        thrown.getMessage().substring(prefix.length()),
-        () -> "what git printed about the ref: " + thrown.getMessage());
-  }
-
-  @Test
-  void aFailedCommandKeepsFailingForTheRestOfTheBuild() throws Exception {
-    repositoryWithOneCommit();
-    GitService git = service();
-    String[] resolveAbsent = {"rev-parse", "--verify", "--quiet", "absent^{commit}"};
-    git.outputOrNull(resolveAbsent);
-
-    run("branch", "absent");
-
-    assertNull(git.outputOrNull(resolveAbsent), "the ref the branch now names");
-  }
-
-  @Test
-  void aCommandThatFoundNothingComesBackAsEmptyOutput() throws Exception {
-    repositoryWithOneCommit();
 
     assertEquals(
-        "",
-        service().output("ls-files", "--others", "--exclude-standard", "--", "*.java"),
-        "an untracked Java file");
+        first,
+        service.git().output("rev-parse", "HEAD"),
+        "rev-parse HEAD after a second commit");
+    assertNotEquals(first, head(), "the commit HEAD names after the second commit");
   }
 
   /** Creates a repository whose only commit is on master. */
