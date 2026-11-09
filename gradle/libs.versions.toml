@@ -4,6 +4,8 @@ pitest = "1.30.2"
 pitest-junit5-plugin = "1.2.3"
 
 [libraries]
+# Prints failed tests with their stack traces, and marks them for GitHub Actions.
+gradle-extensions-plugin = "com.github.vlsi.gradle:gradle-extensions-plugin:4.0.0"
 junit-bom = "org.junit:junit-bom:5.14.4"
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }

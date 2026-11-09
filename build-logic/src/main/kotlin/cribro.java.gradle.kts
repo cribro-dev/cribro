@@ -2,6 +2,7 @@
 // a JDK that CI picks.
 plugins {
     `java-library`
+    id("com.github.vlsi.gradle-extensions")
 }
 
 group = "io.github.cribrodev"
@@ -59,5 +60,4 @@ tasks.test {
     }
     providers.gradleProperty("testExtraJvmArgs").orNull?.let { jvmArgs(it.split(Regex("\\s+")).filter(String::isNotEmpty)) }
     systemProperty("junit.jupiter.testmethod.order.default", "org.junit.jupiter.api.MethodOrderer\$Random")
-    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
 }
