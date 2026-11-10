@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -49,9 +50,10 @@ import org.gradle.testing.jacoco.tasks.JacocoReport;
 
 /**
  * Adds {@code diffCoverage}, {@code changedLines}, and {@code pitestDiff} to every project that
- * applies the {@code java} plugin, and has the {@code test} task report which of the lines the
- * branch changed it executed. Every project, Java or not, gets the {@code cribroProjectElements}
- * configuration, which tells the {@code cribro} task whether the project applies the java plugin.
+ * applies the {@code java} plugin, which the Kotlin JVM plugin does too, and has the {@code test}
+ * task report which of the lines the branch changed it executed. Every project, Java or not, gets
+ * the {@code cribroProjectElements} configuration, which tells the {@code cribro} task whether the
+ * project applies the java plugin.
  *
  * <p>{@link CribroSettingsPlugin} applies it, often from an init script to a build that knows
  * nothing about it, so it overrides the build's own JaCoCo settings for the {@code test} task: a
@@ -168,10 +170,10 @@ public abstract class CribroPlugin implements Plugin<Project> {
             () -> {
               Path root = repositoryRoot.toPath();
               List<String> roots = new ArrayList<>();
-              for (File dir : main.getJava().getSrcDirs()) {
+              for (File dir : sourceDirs(main)) {
                 Path path = dir.toPath().toAbsolutePath().normalize();
                 if (path.startsWith(root)) {
-                  roots.add(root.relativize(path).toString());
+                  roots.add(root.relativize(path).toString().replace(File.separatorChar, '/'));
                 }
               }
               return roots;
@@ -308,6 +310,8 @@ public abstract class CribroPlugin implements Plugin<Project> {
         providers
             .gradleProperty("cribro.pitestJunit5PluginVersion")
             .getOrElse(Versions.pitestJunit5Plugin());
+    List<String> pitestPlugins =
+        PitestRun.plugins(providers.gradleProperty("cribro.pitestPlugins").getOrNull());
     pitest.defaultDependencies(
         deps -> {
           deps.add(
@@ -320,6 +324,9 @@ public abstract class CribroPlugin implements Plugin<Project> {
                 project
                     .getDependencies()
                     .create("org.pitest:pitest-junit5-plugin:" + pitestJunit5Version));
+          }
+          for (String plugin : pitestPlugins) {
+            deps.add(project.getDependencies().create(plugin));
           }
         });
 
@@ -356,7 +363,7 @@ public abstract class CribroPlugin implements Plugin<Project> {
                       project.files(
                           (Callable<Object>) () -> missingLauncher(project, testRuntime, t)));
               task.getMainClassesDirs().from(main.getOutput().getClassesDirs());
-              task.getMainSourceDirs().from(main.getJava().getSrcDirs());
+              task.getMainSourceDirs().from((Callable<Set<File>>) () -> sourceDirs(main));
               task.getReportDir()
                   .set(project.getLayout().getBuildDirectory().dir("reports/pitest-diff"));
               task.getRepositoryRoot().set(repositoryRoot);
@@ -466,6 +473,19 @@ public abstract class CribroPlugin implements Plugin<Project> {
   private static Provider<Integer> intProperty(
       ProviderFactory providers, String name, int defaultValue) {
     return providers.gradleProperty(name).map(Integer::parseInt).orElse(defaultValue);
+  }
+
+  /**
+   * Returns the directories of the source set that hold sources: those of {@code allJava}, which
+   * the Kotlin Gradle plugin adds its own directories to, so {@code src/main/kotlin} is among them
+   * on a Kotlin build.
+   *
+   * <p>{@code java.srcDirs} alone would miss {@code src/main/kotlin}, and a directory that the
+   * build also names as a resources directory, for files kept beside the classes, stays a source
+   * directory.
+   */
+  static Set<File> sourceDirs(SourceSet sourceSet) {
+    return sourceSet.getAllJava().getSrcDirs();
   }
 
   /** A flag passed with no value, as in {@code -Pcribro.diffCoverageShowAll}, reads as true. */

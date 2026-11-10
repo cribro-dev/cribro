@@ -19,9 +19,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.NavigableSet;
-import java.util.TreeMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -230,35 +227,35 @@ final class DiffCoverageReport {
   private DiffCoverageReport() {}
 
   /**
-   * Measures the changed lines of the files that sit under one of the source roots.
+   * Measures the changed lines of the files of this module.
    *
-   * <p>A changed file outside every root belongs to another module and is left out entirely, so
-   * that a module's report says nothing about code it was never compiled from. A file under a root
-   * that no report mentions is reported, since the reader has to decide whether the module was part
-   * of the run or the file simply contributes no class.
+   * <p>The files are those {@link ChangedLines#underSourceRoots} kept: a changed file outside every
+   * root belongs to another module and is left out entirely, so that a module's report says nothing
+   * about code it was never compiled from. A file that no report mentions is reported, since the
+   * reader has to decide whether the module was part of the run or the file simply contributes no
+   * class.
    *
-   * @param sourceRoots repository-relative source directories, such as {@code
-   *     nullaway/src/main/java}
+   * <p>Two files under one key, as when two source roots each hold a {@code Util.kt} of one package,
+   * are each reported against the same counters, since JaCoCo records the lines of both under one
+   * source file and gives no way to tell them apart. Each path is still printed, so that neither
+   * changed file leaves the report.
+   *
+   * @param changed the files in the order the lists that name nothing to do print them, which
+   *     {@link ChangedLines#underSourceRoots} orders by path
    * @param sources the working tree the uncovered lines are quoted from
    */
   static DiffCoverageReport measure(
-      Map<String, NavigableSet<Integer>> changed,
-      List<String> sourceRoots,
-      JacocoLines lines,
-      SourceLines sources) {
+      List<ChangedFile> changed, JacocoLines lines, SourceLines sources) {
     DiffCoverageReport report = new DiffCoverageReport();
-    for (Map.Entry<String, NavigableSet<Integer>> entry : new TreeMap<>(changed).entrySet()) {
-      String path = entry.getKey();
-      String key = ChangedLines.underSourceRoot(path, sourceRoots);
-      if (key == null) {
-        continue;
-      }
+    for (ChangedFile entry : changed) {
+      String path = entry.path();
+      String key = entry.key();
       if (!lines.covers(key)) {
         report.notInAnyReport.add(path);
         continue;
       }
       FileCoverage file = new FileCoverage(path);
-      for (int number : entry.getValue()) {
+      for (int number : entry.lines()) {
         JacocoLines.Counters counters = lines.get(key, number);
         if (counters == null) {
           continue;
