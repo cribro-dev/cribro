@@ -210,16 +210,20 @@ public final class DiffCoverage {
     if (existing.isEmpty()) {
       return NO_REPORT;
     }
+    List<ChangedFile> files = ChangedLines.underSourceRoots(repository, changed, sourceRoots);
     JacocoLines lines = coverage;
     if (lines == null) {
-      Set<String> keys = ChangedLines.underSourceRoots(changed, sourceRoots).keySet();
+      Set<String> keys = files.stream().map(ChangedFile::key).collect(Collectors.toSet());
       lines = JacocoLines.read(existing, keys::contains);
     }
     SourceLines sources = SourceLines.under(repository);
-    DiffCoverageReport report = DiffCoverageReport.measure(changed, sourceRoots, lines, sources);
+    DiffCoverageReport report = DiffCoverageReport.measure(files, lines, sources);
     ExposedCodeReport exposed =
         ExposedCodeReport.measure(
-            ExposedCode.find(repository, changed, sourceRoots), sourceRoots, lines, sources);
+            ExposedCode.find(repository, changed, sourceRoots),
+            files.stream().collect(Collectors.toMap(ChangedFile::path, ChangedFile::key)),
+            lines,
+            sources);
     Function<List<ExposedCode.TestMethod>, String> tests =
         methods ->
             testFilter.apply(

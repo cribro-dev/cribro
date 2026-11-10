@@ -193,10 +193,19 @@ public final class PitestSurvivors {
    * @param mutantsFile the {@link MutantsFile} the run wrote, or a missing file where PIT generated
    *     no mutant on the changed lines and wrote no report
    * @param repository the directory the printed paths are relative to
-   * @param sourceRoots absolute source directories, searched in order for the mutated file
+   * @param sourceRoots absolute source directories, searched in order for a mutated file that
+   *     {@code paths} does not name or names at a path that no longer exists
+   * @param paths the repository-relative path of each changed file, keyed by {@link
+   *     SourceFileKey}, as the {@link ChangedLinesFile} of the run records them; a Kotlin file may
+   *     lie in a directory that does not follow its package, so its key alone finds no file
    */
   public static PitestSurvivors read(
-      String scope, File mutantsFile, File repository, List<File> sourceRoots) throws IOException {
+      String scope,
+      File mutantsFile,
+      File repository,
+      List<File> sourceRoots,
+      Map<String, String> paths)
+      throws IOException {
     if (!mutantsFile.isFile()) {
       return new PitestSurvivors(
           scope, Comparator.naturalOrder(), new LinkedHashMap<>(), 0, new ArrayList<>());
@@ -220,10 +229,9 @@ public final class PitestSurvivors {
                       shortTestNames.computeIfAbsent(test, PitestSurvivors::shortTestName)));
       int packageEnd = mutant.mutatedClass().lastIndexOf('.');
       String relative =
-          (packageEnd < 0
-                  ? ""
-                  : mutant.mutatedClass().substring(0, packageEnd).replace('.', '/') + "/")
-              + mutant.sourceFile();
+          SourceFileKey.of(
+              packageEnd < 0 ? "" : mutant.mutatedClass().substring(0, packageEnd).replace('.', '/'),
+              mutant.sourceFile());
       String description =
           (mutant.status().equals("NO_COVERAGE") ? "no test reaches it: " : "survived: ")
               + DESCRIPTION_SUFFIX.matcher(mutant.description()).replaceFirst("");
@@ -235,7 +243,11 @@ public final class PitestSurvivors {
     SourceLines sourceLines = SourceLines.under(repository);
     List<FileMutants> files = new ArrayList<>();
     for (Map.Entry<String, TreeMap<Integer, List<Mutant>>> file : byFile.entrySet()) {
-      File source = locate(sourceRoots, file.getKey());
+      String known = paths.get(file.getKey());
+      File source =
+          known != null && new File(repository, known).isFile()
+              ? new File(repository, known)
+              : locate(sourceRoots, file.getKey());
       String path =
           source == null ? file.getKey() : SourceLines.relativize(repository, source);
       List<Line> lines = new ArrayList<>();

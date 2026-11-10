@@ -24,6 +24,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -58,6 +59,33 @@ class PitestRunTest {
   @Test
   void pitLeavesItsOwnLaunchClasspathOffTheTestsClasspath() throws IOException {
     assertEquals("false", option(arguments(List.of()), "includeLaunchClasspath"));
+  }
+
+  /**
+   * On Windows the Java launcher expands a bare {@code *} argument into the file names of the
+   * working directory, so a run with no test glob names every test with a pattern that is not a
+   * bare wildcard, which the launcher leaves alone unless a file named {@code ~.<something>} lies
+   * in the working directory.
+   */
+  @Test
+  void aRunWithNoTestGlobNamesEveryTestWithoutABareWildcard() throws IOException {
+    String targetTests = option(arguments(List.of()), "targetTests");
+    assertEquals(PitestRun.ALL_TESTS, targetTests);
+    assertEquals(true, targetTests.startsWith("~"), "a regular expression to PIT: " + targetTests);
+    assertEquals(
+        true,
+        Pattern.compile(targetTests.substring(1)).matcher("demo.CalcTest").matches(),
+        "matches a test class: " + targetTests);
+  }
+
+  @Test
+  void anUnsetPluginsPropertyNamesNoPlugin() {
+    assertEquals(List.of(), PitestRun.plugins(null));
+  }
+
+  @Test
+  void thePluginsPropertyIsSplitAtCommasTrimmedAndStrippedOfBlanks() {
+    assertEquals(List.of("a:b:1", "c:d:2"), PitestRun.plugins(" a:b:1 , ,c:d:2 "));
   }
 
   /** The file keeps a long classpath off a command line that Windows limits to 32767 characters. */
