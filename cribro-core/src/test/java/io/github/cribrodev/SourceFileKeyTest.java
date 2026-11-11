@@ -45,7 +45,8 @@ class SourceFileKeyTest {
 
   /** Prints a source text on one line, so that the failure report shows where it breaks. */
   private static String declaredPackageOf(String text, boolean kotlin) {
-    return "declaredPackage(\"" + text.replace("\n", "\\n") + "\", kotlin=" + kotlin + ")";
+    String oneLine = text.replace("\n", "\\n").replace("\r", "\\r");
+    return "declaredPackage(\"" + oneLine + "\", kotlin=" + kotlin + ")";
   }
 
   @Nested
@@ -74,6 +75,11 @@ class SourceFileKeyTest {
               "@file : JvmName (\"U\")\npackage demo\n",
               true),
           argumentSet(
+              "comments around the use-site target and the arguments",
+              "@file/* a */:/* b */JvmName/* c */(\"U\")\npackage demo\n",
+              true),
+          argumentSet("a space after the at sign", "@ Deprecated\npackage demo;\n", false),
+          argumentSet(
               "an annotation list",
               "@file:[JvmName(\"U\") Suppress(\"x\")]\npackage demo\n",
               true),
@@ -87,6 +93,27 @@ class SourceFileKeyTest {
               "a quote and brackets in a raw string argument",
               "@file:JvmName(\"\"\"a\"b)))\"\"\")\npackage demo\n",
               true),
+          argumentSet(
+              "a raw string argument that ends in a quote",
+              "@file:JvmName(\"\"\"a\"\"\"\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a bracket in a block comment in Kotlin arguments",
+              "@file:Suppress(/* ) */ \"X\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a bracket in a block comment in Java arguments",
+              "@Deprecated(/* ) */ since = \"1\")\npackage demo;\n",
+              false),
+          argumentSet(
+              "a bracket in a line comment in the arguments",
+              "@file:Suppress(// )\n\"X\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a line comment in the arguments ended by a carriage return",
+              "@Deprecated(// )\r since = \"1\")\rpackage demo;\r",
+              false),
+          argumentSet("a line comment ended by a carriage return", "// c\rpackage demo;\r", false),
           argumentSet(
               "a bracket in a character argument", "@file:Suppress(')')\npackage demo\n", true),
           argumentSet(
@@ -114,6 +141,14 @@ class SourceFileKeyTest {
               "com.x"),
           argumentSet("a backticked last segment", "package demo.`my pkg`\n", "demo.my pkg"),
           argumentSet("a backticked first segment", "package `my pkg`.demo\n", "my pkg.demo"),
+          argumentSet("a block comment right after the keyword", "package/* c */demo\n", "demo"),
+          argumentSet("a line comment right after the keyword", "package// c\ndemo\n", "demo"),
+          argumentSet(
+              "a backticked segment right after the keyword", "package`my pkg`\n", "my pkg"),
+          argumentSet(
+              "an annotated declaration after the name",
+              "package demo\n@Ann(\"${\"(\"}\")\nclass A\n",
+              "demo"),
           argumentSet("an identifier with digits and underscores", "package a_1.b2;\n", "a_1.b2"));
     }
 
@@ -128,6 +163,7 @@ class SourceFileKeyTest {
       return Stream.of(
           argumentSet("an empty text", ""),
           argumentSet("a class", "class A {}\n"),
+          argumentSet("an empty declaration before a class", "; class A {}\n"),
           argumentSet("a call whose name starts with the keyword", "packageInfo()\n"),
           argumentSet("a line comment that ends the text", "// note"),
           argumentSet("an annotated class", "@Deprecated\nclass A {}\n"),
@@ -153,10 +189,21 @@ class SourceFileKeyTest {
           argumentSet("an unterminated string argument", "@file:JvmName(\"X)\npackage demo\n"),
           argumentSet(
               "an unterminated raw string argument", "@file:JvmName(\"\"\"X\"Y)\npackage demo\n"),
+          argumentSet(
+              "an unterminated comment in the arguments",
+              "@file:Suppress(/* ) \"X\")\npackage demo\n"),
+          argumentSet("a character no declaration starts with", "%\npackage demo\n"),
+          argumentSet(
+              "a shebang line after the first line", "\n#!/usr/bin/env kotlin\npackage demo\n"),
           argumentSet("a keyword that ends the text", "package"),
           argumentSet("a keyword and a space that end the text", "package "),
           argumentSet("an unterminated comment after the keyword", "package /* x"),
+          argumentSet("an unterminated comment after the name", "package demo /* x"),
+          argumentSet(
+              "an unterminated comment in an annotation",
+              "@file:/* JvmName(\"U\")\npackage demo\n"),
           argumentSet("a keyword with no name", "package ;\n"),
+          argumentSet("a keyword followed by a semicolon", "package;\n"),
           argumentSet("a name that starts with a digit", "package 1x;\n"),
           argumentSet("a name that ends in a dot", "package demo."),
           argumentSet("an unterminated backticked segment", "package demo.`x"));
@@ -176,6 +223,31 @@ class SourceFileKeyTest {
     @MethodSource("commentNesting")
     void aBlockCommentEndsAtItsMatchingCloseOnlyInKotlin(boolean kotlin, String expected) {
       String text = "/* a /* b */ package x; */\npackage y;\n";
+      assertEquals(
+          expected, SourceFileKey.declaredPackage(text, kotlin), declaredPackageOf(text, kotlin));
+    }
+
+    static Stream<Arguments> commentNestingInArguments() {
+      return Stream.of(argumentSet("Java", false, null), argumentSet("Kotlin", true, "demo"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("commentNestingInArguments")
+    void aBlockCommentInArgumentsEndsAtItsMatchingCloseOnlyInKotlin(
+        boolean kotlin, String expected) {
+      String text = "@file:Suppress(/* /* */ ) */ \"X\")\npackage demo\n";
+      assertEquals(
+          expected, SourceFileKey.declaredPackage(text, kotlin), declaredPackageOf(text, kotlin));
+    }
+
+    static Stream<Arguments> shebangLine() {
+      return Stream.of(argumentSet("Java", false, null), argumentSet("Kotlin", true, "demo"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("shebangLine")
+    void aShebangLineMayOpenOnlyAKotlinText(boolean kotlin, String expected) {
+      String text = "#!/usr/bin/env kotlin\npackage demo\n";
       assertEquals(
           expected, SourceFileKey.declaredPackage(text, kotlin), declaredPackageOf(text, kotlin));
     }

@@ -60,10 +60,10 @@ public final class ChangedLinesFile {
   /**
    * Writes the changed lines to a file, replacing whatever it held.
    *
-   * <p>The entries are ordered by key, and two files under one key, which happens where two source
-   * roots hold a file of one name in one package, are written as one entry with the lines of both,
-   * under the path that sorts first; so the file reads the same whatever order the files come in.
-   * The entry names one file for the lines of both, so a reader quotes every line of the entry
+   * <p>The entries are ordered by key. Two files under one key, as when two files of one name
+   * declare one package in one source root or in two, are written as one entry with the lines of
+   * both, under the path that sorts first, so the file reads the same whatever order the files come
+   * in. The entry names one file for the lines of both, so a reader quotes every line of the entry
    * from that file.
    *
    * @param header comment lines written before the entries, without the leading {@code #}

@@ -99,31 +99,39 @@ public final class SourceFileKey {
    * package ;}, or a {@code package} keyword that ends the text.
    *
    * <p>Only comments and annotations, Java package annotations and Kotlin file annotations alike,
-   * may precede the declaration, so the text is scanned rather than searched: a string literal or a
-   * comment further down that spells {@code package} names no package.
+   * may precede the declaration, and in Kotlin a {@code #!} line before them, so the text is
+   * scanned rather than searched: a string literal or a comment further down that spells {@code
+   * package} names no package. A text declares none only where the scan ends at the end of the
+   * text, at an empty declaration {@code ;}, or at an identifier other than {@code package}, such
+   * as {@code import} or {@code class}; any other character there leaves the declaration unread.
    *
-   * @param kotlin whether the text is Kotlin, whose block comments nest, so that a comment holding
-   *     another ends at the matching close rather than the first
+   * @param kotlin whether the text is Kotlin, which may open with a {@code #!} line and whose block
+   *     comments nest, so that a comment holding another ends at the matching close rather than the
+   *     first
    */
   static String declaredPackage(String text, boolean kotlin) {
     int at = text.startsWith("﻿") ? 1 : 0;
+    if (kotlin && text.startsWith("#!", at)) {
+      at = skipLineComment(text, at);
+    }
     at = skipSpaceCommentsAndAnnotations(text, at, kotlin);
     if (at < 0) {
       return null;
     }
-    if (!text.startsWith("package", at)) {
+    if (at == text.length()) {
       return "";
     }
-    at += "package".length();
-    if (at >= text.length()) {
-      return null;
+    if (!text.startsWith("package", at)) {
+      char c = text.charAt(at);
+      return Character.isJavaIdentifierStart(c) || c == ';' ? "" : null;
     }
-    if (!Character.isWhitespace(text.charAt(at))) {
+    at += "package".length();
+    if (at < text.length() && Character.isJavaIdentifierPart(text.charAt(at))) {
       return "";
     }
     StringBuilder name = new StringBuilder();
     while (true) {
-      at = skipSpaceCommentsAndAnnotations(text, at, kotlin);
+      at = skipSpaceAndComments(text, at, kotlin);
       if (at < 0 || at >= text.length()) {
         return null;
       }
@@ -144,8 +152,11 @@ public final class SourceFileKey {
         }
         name.append(text, start, at);
       }
-      at = skipSpaceCommentsAndAnnotations(text, at, kotlin);
-      if (at >= 0 && at < text.length() && text.charAt(at) == '.') {
+      at = skipSpaceAndComments(text, at, kotlin);
+      if (at < 0) {
+        return null;
+      }
+      if (at < text.length() && text.charAt(at) == '.') {
         name.append('.');
         at++;
         continue;
@@ -162,20 +173,39 @@ public final class SourceFileKey {
    */
   private static int skipSpaceCommentsAndAnnotations(
       String text, int at, boolean nestedComments) {
+    at = skipSpaceAndComments(text, at, nestedComments);
+    while (at >= 0 && at < text.length() && text.charAt(at) == '@') {
+      at = skipSpaceAndComments(text, skipAnnotation(text, at + 1, nestedComments), nestedComments);
+    }
+    return at;
+  }
+
+  /**
+   * Returns the index of the first character after the whitespace and comments at {@code at}, or -1
+   * where {@code at} is -1 or a comment never ends.
+   */
+  private static int skipSpaceAndComments(String text, int at, boolean nestedComments) {
     while (at >= 0 && at < text.length()) {
-      char c = text.charAt(at);
-      if (Character.isWhitespace(c)) {
+      if (Character.isWhitespace(text.charAt(at))) {
         at++;
       } else if (text.startsWith("//", at)) {
-        int end = text.indexOf('\n', at);
-        at = end < 0 ? text.length() : end + 1;
+        at = skipLineComment(text, at);
       } else if (text.startsWith("/*", at)) {
         at = skipBlockComment(text, at, nestedComments);
-      } else if (c == '@') {
-        at = skipAnnotation(text, at + 1);
       } else {
         break;
       }
+    }
+    return at;
+  }
+
+  /**
+   * Returns the index of the line terminator, LF or CR, that ends the line holding {@code at}, or
+   * the length of a text the line ends.
+   */
+  private static int skipLineComment(String text, int at) {
+    while (at < text.length() && text.charAt(at) != '\n' && text.charAt(at) != '\r') {
+      at++;
     }
     return at;
   }
@@ -205,46 +235,48 @@ public final class SourceFileKey {
   }
 
   /**
-   * Returns the index after the annotation whose name starts at {@code at}: a Kotlin use-site
-   * target such as {@code file:}, a qualified name, and the arguments in parentheses or, for a
-   * Kotlin annotation list, in brackets.
+   * Returns the index after the annotation whose name starts at {@code at}, or -1 where a comment
+   * or the arguments never end: a Kotlin use-site target such as {@code file:}, a qualified name,
+   * and the arguments in parentheses or, for a Kotlin annotation list, in brackets. Whitespace and
+   * comments may stand between these parts.
    */
-  private static int skipAnnotation(String text, int at) {
-    while (true) {
+  private static int skipAnnotation(String text, int at, boolean nestedComments) {
+    at = skipSpaceAndComments(text, at, nestedComments);
+    while (at >= 0) {
       while (at < text.length()
           && (Character.isJavaIdentifierPart(text.charAt(at)) || text.charAt(at) == '.')) {
         at++;
       }
-      int next = at;
-      while (next < text.length() && Character.isWhitespace(text.charAt(next))) {
-        next++;
+      int next = skipSpaceAndComments(text, at, nestedComments);
+      if (next < 0) {
+        return -1;
       }
       if (next >= text.length()) {
         return at;
       }
       char c = text.charAt(next);
       if (c == ':') {
-        at = next + 1;
-        while (at < text.length() && Character.isWhitespace(text.charAt(at))) {
-          at++;
-        }
+        at = skipSpaceAndComments(text, next + 1, nestedComments);
         continue;
       }
       if (c == '(') {
-        return skipBalanced(text, next, '(', ')');
+        return skipBalanced(text, next, '(', ')', nestedComments);
       }
       if (c == '[') {
-        return skipBalanced(text, next, '[', ']');
+        return skipBalanced(text, next, '[', ']', nestedComments);
       }
       return at;
     }
+    return -1;
   }
 
   /**
    * Returns the index after the bracket that closes the one at {@code at}, or -1 where none does.
-   * A string or character literal between them is skipped, so a bracket in it does not count.
+   * A comment or a string or character literal between them is skipped, so a bracket in it does
+   * not count.
    */
-  private static int skipBalanced(String text, int at, char open, char close) {
+  private static int skipBalanced(
+      String text, int at, char open, char close, boolean nestedComments) {
     int depth = 0;
     while (at < text.length()) {
       char c = text.charAt(at);
@@ -255,6 +287,15 @@ public final class SourceFileKey {
         if (depth == 0) {
           return at + 1;
         }
+      } else if (text.startsWith("//", at)) {
+        at = skipLineComment(text, at);
+        continue;
+      } else if (text.startsWith("/*", at)) {
+        at = skipBlockComment(text, at, nestedComments);
+        if (at < 0) {
+          return -1;
+        }
+        continue;
       } else if (c == '"' || c == '\'') {
         at = skipLiteral(text, at);
         if (at < 0) {
@@ -267,12 +308,23 @@ public final class SourceFileKey {
     return -1;
   }
 
-  /** Returns the index after the literal that opens at {@code at}, or -1 where it never closes. */
+  /**
+   * Returns the index after the literal that opens at {@code at}, or -1 where it never closes. A
+   * Kotlin raw string ends at the last quote of the first run of three or more, so the quotes
+   * before the last three belong to its text.
+   */
   private static int skipLiteral(String text, int at) {
     char quote = text.charAt(at);
     if (quote == '"' && text.startsWith("\"\"\"", at)) {
       int end = text.indexOf("\"\"\"", at + 3);
-      return end < 0 ? -1 : end + 3;
+      if (end < 0) {
+        return -1;
+      }
+      end += 3;
+      while (end < text.length() && text.charAt(end) == '"') {
+        end++;
+      }
+      return end;
     }
     at++;
     while (at < text.length()) {
