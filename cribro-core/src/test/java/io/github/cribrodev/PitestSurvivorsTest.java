@@ -72,6 +72,14 @@ class PitestSurvivorsTest {
 
   /** Reads a run whose sources are com/x/A.java and com/x/B.java, each with five lines. */
   private PitestSurvivors run(String... mutations) throws IOException {
+    return run(Map.of(), mutations);
+  }
+
+  /**
+   * Reads a run whose sources are com/x/A.java and com/x/B.java, each with five lines, under the
+   * root {@code src}, with the changed-lines file naming the given path for each key.
+   */
+  private PitestSurvivors run(Map<String, String> paths, String... mutations) throws IOException {
     Path sources = repository.resolve("src");
     Files.createDirectories(sources.resolve("com/x"));
     Files.writeString(sources.resolve("com/x/A.java"), "a1\n  a2\na3\na4\na5\n");
@@ -81,32 +89,76 @@ class PitestSurvivorsTest {
         mutantsFile(mutations).toFile(),
         repository.toFile(),
         List.of(new File("absent"), sources.toFile()),
-        Map.of());
+        paths);
   }
 
-  /**
-   * A Kotlin file may lie in a directory that does not follow its package, so no source root
-   * finds it under its key; the changed-lines file names where it is.
-   */
-  @Test
-  void aFileTheChangedLinesFileNamesIsReadFromThatPathRatherThanSearchedFor() throws IOException {
-    Path source = repository.resolve("src/main/kotlin/A.kt");
-    Files.createDirectories(source.getParent());
-    Files.writeString(source, "a1\nreturn a\n");
-    PitestSurvivors report =
-        PitestSurvivors.read(
-            "against origin/master (abc), all tests",
-            mutantsFile(mutation("SURVIVED", "AKt", "A.kt", 2, "removed call")).toFile(),
-            repository.toFile(),
-            List.of(repository.resolve("src/main/kotlin").toFile()),
-            Map.of("com/x/A.kt", "src/main/kotlin/A.kt"));
+  /** Writes a file of the repository. */
+  private void write(String path, String text) throws IOException {
+    Path file = repository.resolve(path);
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, text);
+  }
 
-    assertEquals(
-        List.of("  src/main/kotlin/A.kt", "    2: return a", "        survived: removed call, in m"),
-        report.render(DiffCoverageReport.Limits.NONE, List.of()).lines()
-            .filter(line -> line.startsWith("  "))
-            .filter(line -> !line.startsWith("  -") && !line.startsWith("  1 mutant") && !line.startsWith("  ordered"))
-            .toList());
+  @Nested
+  class TheQuotedFile {
+
+    /** A Kotlin file may lie in a directory that does not follow its package. */
+    @Test
+    void aPathTheChangedLinesFileNamesIsQuotedRatherThanTheFileUnderARoot() throws IOException {
+      write("gen/A.java", "g1\ng2\n");
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  1 mutant: 0 killed, 1 survived, 0 not reached by any test\n"
+              + "  ordered by live mutants per file, then by line\n"
+              + "\n"
+              + "  gen/A.java\n"
+              + "    2: g2\n"
+              + "        survived: removed call, in m\n"
+              + "\n"
+              + "Live mutants on 1 line in 1 file."
+              + LIVE_FOOTER,
+          run(
+                  Map.of("com/x/A.java", "gen/A.java"),
+                  mutation("SURVIVED", "A", "A.java", 2, "removed call"))
+              .render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
+
+    @Test
+    void aPathTheChangedLinesFileNamesThatNoLongerExistsFallsBackToTheRoots() throws IOException {
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  1 mutant: 0 killed, 1 survived, 0 not reached by any test\n"
+              + "  ordered by live mutants per file, then by line\n"
+              + "\n"
+              + "  src/com/x/A.java\n"
+              + "    2: a2\n"
+              + "        survived: removed call, in m\n"
+              + "\n"
+              + "Live mutants on 1 line in 1 file."
+              + LIVE_FOOTER,
+          run(
+                  Map.of("com/x/A.java", "gone/A.java"),
+                  mutation("SURVIVED", "A", "A.java", 2, "removed call"))
+              .render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
+
+    @Test
+    void aMutantInTheDefaultPackageIsFoundByItsFileNameUnderARoot() throws IOException {
+      write("src/D.java", "d1\n");
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  1 mutant: 0 killed, 1 survived, 0 not reached by any test\n"
+              + "  ordered by live mutants per file, then by line\n"
+              + "\n"
+              + "  src/D.java\n"
+              + "    1: d1\n"
+              + "        survived: removed call, in m\n"
+              + "\n"
+              + "Live mutants on 1 line in 1 file."
+              + LIVE_FOOTER,
+          run("SURVIVED\tD\tm\tD.java\t1\tremoved call for D::m")
+              .render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
   }
 
   @Test

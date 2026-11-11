@@ -18,6 +18,8 @@ package io.github.cribrodev;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.params.provider.Arguments.argumentSet;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,9 +29,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.pitest.util.Glob;
 
@@ -102,28 +107,46 @@ class ChangedLinesFileTest {
   }
 
   /**
-   * Two source roots can each hold a file of one name in one package. The entry names the path
-   * that sorts first, whichever of the two files comes first.
+   * Where two source roots each hold a file of one name in one package, the entry names the path
+   * that sorts first.
    */
   @ParameterizedTest
-  @ValueSource(booleans = {false, true})
-  void twoFilesUnderOneKeyAreWrittenAsOneEntryWithTheLinesOfBoth(boolean generatedFirst)
+  @MethodSource
+  void twoFilesUnderOneKeyAreWrittenAsOneEntryWithTheLinesOfBoth(List<ChangedFile> files)
       throws IOException {
     Path file = directory.resolve("changed-lines.txt");
-    ChangedFile source = new ChangedFile("src/a/B.java", "a/B.java", lines(2));
-    ChangedFile generated = new ChangedFile("gen/a/B.java", "a/B.java", lines(7));
 
-    ChangedLinesFile.write(
-        file, List.of(), generatedFirst ? List.of(generated, source) : List.of(source, generated));
+    ChangedLinesFile.write(file, List.of(), files);
 
     assertAll(
-        () -> assertEquals(Map.of("a/B.java", lines(2, 7)), ChangedLinesFile.read(file), "lines"),
+        () -> assertEquals(Map.of("a/B.java", lines(2, 7)), ChangedLinesFile.read(file), "read"),
         () ->
             assertEquals(
-                Map.of("a/B.java", "gen/a/B.java"), ChangedLinesFile.readPaths(file), "paths"));
+                Map.of("a/B.java", "gen/a/B.java"), ChangedLinesFile.readPaths(file), "readPaths"));
   }
 
-  /** The entries come ordered by key, so the file reads the same whatever order the files came in. */
+  static Stream<Arguments> twoFilesUnderOneKeyAreWrittenAsOneEntryWithTheLinesOfBoth() {
+    ChangedFile source = new ChangedFile("src/a/B.java", "a/B.java", lines(2));
+    ChangedFile generated = new ChangedFile("gen/a/B.java", "a/B.java", lines(7));
+    return Stream.of(
+        argumentSet("the path that sorts first given first", List.of(generated, source)),
+        argumentSet("the path that sorts first given second", List.of(source, generated)));
+  }
+
+  @Test
+  void aFileWithNoChangedLineLeavesThePathOfItsKeyToTheFileThatHasLines() throws IOException {
+    Path file = directory.resolve("changed-lines.txt");
+
+    ChangedLinesFile.write(
+        file,
+        List.of(),
+        List.of(
+            new ChangedFile("gen/a/B.java", "a/B.java", lines()),
+            new ChangedFile("src/a/B.java", "a/B.java", lines(2))));
+
+    assertEquals(Map.of("a/B.java", "src/a/B.java"), ChangedLinesFile.readPaths(file));
+  }
+
   @Test
   void theEntriesAreOrderedByKey() throws IOException {
     Path file = directory.resolve("changed-lines.txt");
@@ -207,12 +230,13 @@ class ChangedLinesFileTest {
   }
 
   /** The file is written and read by one cribro, so an entry short of a field is corruption. */
-  @Test
-  void anEntryWithoutAPathIsRefused() throws IOException {
+  @ParameterizedTest
+  @ValueSource(strings = {"a/B.java\t3", "a/B.java"})
+  void anEntryWithoutAPathIsRefused(String entry) throws IOException {
     Path file = directory.resolve("changed-lines.txt");
-    Files.writeString(file, "a/B.java\t3\n");
+    Files.writeString(file, entry + "\n");
 
     IOException refused = assertThrows(IOException.class, () -> ChangedLinesFile.read(file));
-    assertEquals(true, refused.getMessage().endsWith("line: a/B.java\t3"), refused.getMessage());
+    assertTrue(refused.getMessage().endsWith("line: " + entry), refused.getMessage());
   }
 }

@@ -17,16 +17,21 @@ package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.params.provider.Arguments.argumentSet;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -38,185 +43,146 @@ class SourceFileKeyTest {
 
   @TempDir Path repository;
 
+  /** Prints a source text on one line, so that the failure report shows where it breaks. */
+  private static String declaredPackageOf(String text, boolean kotlin) {
+    return "declaredPackage(\"" + text.replace("\n", "\\n") + "\", kotlin=" + kotlin + ")";
+  }
+
   @Nested
   class TheDeclaredPackage {
 
-    @Test
-    void aJavaDeclarationEndsAtTheSemicolon() {
-      assertEquals("com.x.y", SourceFileKey.declaredPackage("package com.x.y;\n\nclass A {}\n"));
+    static Stream<Arguments> preambles() {
+      return Stream.of(
+          argumentSet("nothing", "package demo\n", false),
+          argumentSet("a byte order mark", "\uFEFFpackage demo\n", false),
+          argumentSet("blank lines", "\n\n  package demo\n", false),
+          argumentSet("line comments", "// package not.this\n// x\npackage demo\n", false),
+          argumentSet("a block comment", "/*\n * package not.this;\n */\npackage demo\n", false),
+          argumentSet("a nested Kotlin comment", "/* a /* b */ c */\npackage demo\n", true),
+          argumentSet("a Java package annotation", "@Deprecated\npackage demo;\n", false),
+          argumentSet("a Kotlin file annotation", "@file:JvmName(\"U\")\npackage demo\n", true),
+          argumentSet(
+              "two file annotations",
+              "@file:JvmName(\"U\")\n@file:Suppress(\"a\", \"b\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a qualified annotation name",
+              "@file:kotlin.jvm.JvmName(\"U\")\npackage demo\n",
+              true),
+          argumentSet(
+              "spaces around the use-site target and the arguments",
+              "@file : JvmName (\"U\")\npackage demo\n",
+              true),
+          argumentSet(
+              "an annotation list",
+              "@file:[JvmName(\"U\") Suppress(\"x\")]\npackage demo\n",
+              true),
+          argumentSet(
+              "a bracket in a string argument", "@file:JvmName(\"U)\")\npackage demo\n", true),
+          argumentSet(
+              "an escaped quote before a bracket in a string argument",
+              "@file:JvmName(\"ab\\\")\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a quote and brackets in a raw string argument",
+              "@file:JvmName(\"\"\"a\"b)))\"\"\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a bracket in a character argument", "@file:Suppress(')')\npackage demo\n", true),
+          argumentSet(
+              "nested brackets in the arguments",
+              "@file:Suppress(names = [(\"a\")])\npackage demo\n",
+              true));
     }
 
-    @Test
-    void aKotlinDeclarationEndsAtTheLine() {
-      assertEquals("demo.math", SourceFileKey.declaredPackage("package demo.math\n\nfun f() = 1\n"));
-    }
-
-    /** A Kotlin file often ends right after its declaration, with no newline. */
-    @Test
-    void aDeclarationThatEndsTheTextIsRead() {
-      assertEquals("demo", SourceFileKey.declaredPackage("package demo"));
-    }
-
-    @Test
-    void aFileWithNoDeclarationIsInTheDefaultPackage() {
-      assertEquals("", SourceFileKey.declaredPackage("class A {}\n"));
-    }
-
-    @Test
-    void anEmptyFileIsInTheDefaultPackage() {
-      assertEquals("", SourceFileKey.declaredPackage(""));
-    }
-
-    @Test
-    void aFileThatIsOneLineCommentWithoutANewlineIsInTheDefaultPackage() {
-      assertEquals("", SourceFileKey.declaredPackage("// note"));
-    }
-
-    @Test
-    void commentsBeforeTheDeclarationAreSkipped() {
+    @ParameterizedTest
+    @MethodSource("preambles")
+    void theDeclarationIsReadPastWhatPrecedesIt(String text, boolean kotlin) {
       assertEquals(
-          "com.x",
-          SourceFileKey.declaredPackage(
-              "/*\n * Copyright: package not.this;\n */\n// package nor.this\npackage com.x;\n"));
+          "demo", SourceFileKey.declaredPackage(text, kotlin), declaredPackageOf(text, kotlin));
     }
 
-    /** Kotlin block comments nest, so a comment that holds another ends at the matching close. */
-    @Test
-    void aNestedKotlinCommentEndsAtItsMatchingClose() {
+    static Stream<Arguments> names() {
+      return Stream.of(
+          argumentSet("Java, ended by a semicolon", "package com.x.y;\n\nclass A {}\n", "com.x.y"),
+          argumentSet(
+              "Kotlin, ended by the line", "package demo.math\n\nfun f() = 1\n", "demo.math"),
+          argumentSet("ended by the text", "package demo.math", "demo.math"),
+          argumentSet(
+              "spaces and a comment between the segments",
+              "package com . /* c */ x ;\n",
+              "com.x"),
+          argumentSet("a backticked last segment", "package demo.`my pkg`\n", "demo.my pkg"),
+          argumentSet("a backticked first segment", "package `my pkg`.demo\n", "my pkg.demo"),
+          argumentSet("an identifier with digits and underscores", "package a_1.b2;\n", "a_1.b2"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("names")
+    void theNameIsReadWithoutSpacesCommentsOrBackticks(String text, String expected) {
       assertEquals(
-          "demo.math",
-          SourceFileKey.declaredPackage(
-              "/*\n * Example: /* nested */\n */\npackage demo.math\n\nfun f() = 1\n", true));
+          expected, SourceFileKey.declaredPackage(text, true), declaredPackageOf(text, true));
     }
 
-    /** A Java block comment ends at the first close, whatever opened inside it. */
-    @Test
-    void aJavaCommentEndsAtTheFirstClose() {
-      assertEquals(
-          "x", SourceFileKey.declaredPackage("/* a /* b */ package x; /* c */\n", false));
-    }
-
-    @Test
-    void anUnclosedNestedKotlinCommentHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("/* a /* b */ package x;\n", true));
-    }
-
-    @Test
-    void kotlinFileAnnotationsBeforeTheDeclarationAreSkipped() {
-      assertEquals(
-          "demo",
-          SourceFileKey.declaredPackage(
-              "@file:JvmName(\"Util)\")\n@file:Suppress(\"a\", \"b\")\npackage demo\n"));
-    }
-
-    @Test
-    void aQualifiedAnnotationNameIsSkippedWhole() {
-      assertEquals(
-          "demo", SourceFileKey.declaredPackage("@file:kotlin.jvm.JvmName(\"X\")\npackage demo\n"));
-    }
-
-    @Test
-    void spaceAfterTheUseSiteTargetAndBeforeTheArgumentsIsSkipped() {
-      assertEquals("demo", SourceFileKey.declaredPackage("@file: JvmName (\"X\")\npackage demo\n"));
-    }
-
-    @Test
-    void anEscapedQuoteInAnArgumentDoesNotEndTheLiteral() {
-      assertEquals(
-          "demo", SourceFileKey.declaredPackage("@file:JvmName(\"a\\\")b\")\npackage demo\n"));
-    }
-
-    @Test
-    void aRawStringArgumentIsSkippedWhole() {
-      assertEquals(
-          "demo", SourceFileKey.declaredPackage("@file:JvmName(\"\"\"a)b\"\"\")\npackage demo\n"));
-    }
-
-    @Test
-    void aCharacterLiteralArgumentHoldingABracketDoesNotCount() {
-      assertEquals("demo", SourceFileKey.declaredPackage("@file:Suppress(')')\npackage demo\n"));
-    }
-
-    @Test
-    void anUnterminatedArgumentListHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("@file:JvmName(\"X\"\npackage demo\n"));
-    }
-
-    @Test
-    void anUnterminatedArgumentLiteralHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("@file:JvmName(\"X)\npackage demo\n"));
-    }
-
-    @Test
-    void aKotlinAnnotationListBeforeTheDeclarationIsSkipped() {
-      assertEquals(
-          "demo",
-          SourceFileKey.declaredPackage("@file:[JvmName(\"U\") Suppress(\"x\")]\npackage demo\n"));
-    }
-
-    /** Java allows an annotation on the package declaration of {@code package-info.java}. */
-    @Test
-    void aJavaPackageAnnotationIsSkipped() {
-      assertEquals("com.x", SourceFileKey.declaredPackage("@Deprecated\npackage com.x;\n"));
-    }
-
-    /** The scan stops at the first declaration, so a string further down names no package. */
-    @Test
-    void aStringLiteralThatSpellsAPackageDoesNotCount() {
-      assertEquals(
-          "",
-          SourceFileKey.declaredPackage(
+    static Stream<Arguments> textsWithoutADeclaration() {
+      return Stream.of(
+          argumentSet("an empty text", ""),
+          argumentSet("a class", "class A {}\n"),
+          argumentSet("a call whose name starts with the keyword", "packageInfo()\n"),
+          argumentSet("a line comment that ends the text", "// note"),
+          argumentSet("an annotated class", "@Deprecated\nclass A {}\n"),
+          argumentSet("an annotation that ends the text", "@Deprecated"),
+          argumentSet("an annotation followed by a newline that ends the text", "@Deprecated\n"),
+          argumentSet("a use-site target that ends the text", "@file:"),
+          argumentSet(
+              "a string further down that spells a declaration",
               "class A {\n  String s = \"\"\"\n      package demo;\n      \"\"\";\n}\n"));
     }
 
-    @Test
-    void anAnnotationOnTheFirstDeclarationLeavesTheFileInTheDefaultPackage() {
-      assertEquals("", SourceFileKey.declaredPackage("@Deprecated\nclass A {}\n"));
+    @ParameterizedTest
+    @MethodSource("textsWithoutADeclaration")
+    void aTextThatDeclaresNoPackageIsInTheDefaultPackage(String text) {
+      assertEquals("", SourceFileKey.declaredPackage(text, true), declaredPackageOf(text, true));
     }
 
-    @Test
-    void whitespaceAndCommentsInsideTheNameAreDropped() {
-      assertEquals("com.x", SourceFileKey.declaredPackage("package com . /* here */ x ;\n"));
+    static Stream<Arguments> unreadableTexts() {
+      return Stream.of(
+          argumentSet("an unterminated block comment", "/* package com.x;\n"),
+          argumentSet("an unterminated nested Kotlin comment", "/* a /* b */ package x;\n"),
+          argumentSet("an unterminated argument list", "@file:JvmName(\"X\"\npackage demo\n"),
+          argumentSet("an unterminated string argument", "@file:JvmName(\"X)\npackage demo\n"),
+          argumentSet(
+              "an unterminated raw string argument", "@file:JvmName(\"\"\"X\"Y)\npackage demo\n"),
+          argumentSet("a keyword that ends the text", "package"),
+          argumentSet("a keyword and a space that end the text", "package "),
+          argumentSet("an unterminated comment after the keyword", "package /* x"),
+          argumentSet("a keyword with no name", "package ;\n"),
+          argumentSet("a name that starts with a digit", "package 1x;\n"),
+          argumentSet("a name that ends in a dot", "package demo."),
+          argumentSet("an unterminated backticked segment", "package demo.`x"));
     }
 
-    @Test
-    void aByteOrderMarkIsSkipped() {
-      assertEquals("com.x", SourceFileKey.declaredPackage("﻿package com.x;\n"));
+    @ParameterizedTest
+    @MethodSource("unreadableTexts")
+    void aTextWhoseDeclarationCannotBeReadHasNoPackage(String text) {
+      assertEquals(null, SourceFileKey.declaredPackage(text, true), declaredPackageOf(text, true));
     }
 
-    @Test
-    void aBacktickedKotlinSegmentIsTakenWithoutTheBackticks() {
-      assertEquals("demo.my pkg", SourceFileKey.declaredPackage("package demo.`my pkg`\n"));
+    static Stream<Arguments> commentNesting() {
+      return Stream.of(argumentSet("Java", false, "x"), argumentSet("Kotlin", true, "y"));
     }
 
-    @Test
-    void anUnterminatedCommentHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("/* package com.x;\n"));
-    }
-
-    @Test
-    void aDeclarationWithNoNameHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("package ;\n"));
-    }
-
-    @Test
-    void aKeywordThatEndsTheTextHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("package"));
-    }
-
-    @Test
-    void aNameThatEndsInADotHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("package demo."));
-    }
-
-    @Test
-    void anUnterminatedBacktickedSegmentHasNoReadableDeclaration() {
-      assertNull(SourceFileKey.declaredPackage("package demo.`x"));
+    @ParameterizedTest
+    @MethodSource("commentNesting")
+    void aBlockCommentEndsAtItsMatchingCloseOnlyInKotlin(boolean kotlin, String expected) {
+      String text = "/* a /* b */ package x; */\npackage y;\n";
+      assertEquals(
+          expected, SourceFileKey.declaredPackage(text, kotlin), declaredPackageOf(text, kotlin));
     }
   }
 
   @Nested
-  class TheKey {
+  class TheKeyOfAFileInTheWorkingTree {
 
     private void write(String path, String text) throws IOException {
       Path file = repository.resolve(path);
@@ -225,66 +191,79 @@ class SourceFileKeyTest {
     }
 
     @Test
-    void theKeyIsTheDeclaredPackageAsAPathAndTheFileName() throws IOException {
+    void isTheDeclaredPackageAsAPathAndTheFileName() throws IOException {
       write("src/main/kotlin/Calc.kt", "package demo.math\n");
       assertEquals(
-          "demo/math/Calc.kt", SourceFileKey.of(repository.toFile(), "src/main/kotlin/Calc.kt", "Calc.kt"));
+          "demo/math/Calc.kt",
+          SourceFileKey.of(repository.toFile(), "src/main/kotlin/Calc.kt", "Calc.kt"));
     }
 
-    /** A Kotlin file's comments nest, and its key is read past one that holds another. */
-    @Test
-    void aKotlinFileIsReadWithNestedComments() throws IOException {
-      write("src/main/kotlin/Calc.kt", "/* a /* b */ c */\npackage demo.math\n");
-      assertEquals(
-          "demo/math/Calc.kt", SourceFileKey.of(repository.toFile(), "src/main/kotlin/Calc.kt", "Calc.kt"));
+    static Stream<Arguments> extensions() {
+      return Stream.of(
+          argumentSet("a Kotlin file", "src/Calc.kt", "y/Calc.kt"),
+          argumentSet("a Java file", "src/Calc.java", "x/Calc.java"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("extensions")
+    void isReadWithNestedCommentsOnlyForAKotlinFile(String path, String expected)
+        throws IOException {
+      write(path, "/* a /* b */ package x; */\npackage y;\n");
+      assertEquals(expected, SourceFileKey.of(repository.toFile(), path, "Calc"), path);
     }
 
     @Test
-    void aFileInTheDefaultPackageIsKeyedByItsName() throws IOException {
+    void isTheFileNameAloneForAFileInTheDefaultPackage() throws IOException {
       write("src/main/java/com/x/A.java", "class A {}\n");
       assertEquals(
-          "A.java", SourceFileKey.of(repository.toFile(), "src/main/java/com/x/A.java", "com/x/A.java"));
+          "A.java",
+          SourceFileKey.of(repository.toFile(), "src/main/java/com/x/A.java", "com/x/A.java"));
     }
 
     @Test
-    void aFileThatDoesNotExistIsKeyedByItsPathBelowTheRoot() {
+    void isThePathBelowTheRootForAFileThatDoesNotExist() {
       assertEquals(
           "com/x/A.java",
           SourceFileKey.of(repository.toFile(), "src/main/java/com/x/A.java", "com/x/A.java"));
     }
 
     @Test
-    void aFileWithNoReadableDeclarationIsKeyedByItsPathBelowTheRoot() throws IOException {
-      write("src/main/java/com/x/A.java", "/* never closed\npackage com.x;\n");
+    void isThePathBelowTheRootForAPathTheFileSystemCannotName() {
+      assertEquals(
+          "com/x/A.java",
+          SourceFileKey.of(repository.toFile(), "src/main/java/com/x/A\0.java", "com/x/A.java"));
+    }
+
+    @Test
+    void isThePathBelowTheRootForAFileWithNoReadableDeclaration() throws IOException {
+      write("src/main/java/com/x/A.java", "/* never closed\npackage demo;\n");
       assertEquals(
           "com/x/A.java",
           SourceFileKey.of(repository.toFile(), "src/main/java/com/x/A.java", "com/x/A.java"));
     }
 
-    /** A comment in another charset must not hide the declaration. */
     @Test
-    void aFileWithBytesThatAreNotUtf8IsStillRead() throws IOException {
-      Path file = repository.resolve("A.java");
-      Files.write(file, new byte[] {'/', '/', ' ', (byte) 0xE9, '\n', 'p', 'a', 'c', 'k', 'a', 'g', 'e',
-          ' ', 'c', 'o', 'm', '.', 'x', ';', '\n'});
+    void isReadPastACommentInAnotherCharset() throws IOException {
+      Files.write(
+          repository.resolve("A.java"),
+          "// é\npackage com.x;\n".getBytes(StandardCharsets.ISO_8859_1));
       assertEquals("com/x/A.java", SourceFileKey.of(repository.toFile(), "A.java", "A.java"));
     }
+  }
+
+  @Nested
+  class TheKeyOfAPackageAndAFileName {
 
     @Test
-    void aPackagePathAndANameJoinWithASlash() {
+    void joinsThePackagePathAndTheNameWithASlash() {
       assertEquals("com/x/A.java", SourceFileKey.of("com/x", "A.java"));
     }
 
     /** JaCoCo names the default package with an empty string; a class file's package is null. */
     @ParameterizedTest
-    @ValueSource(strings = {""})
-    void theDefaultPackageKeysAFileByItsNameAlone(String packagePath) {
+    @NullAndEmptySource
+    void isTheNameAloneInTheDefaultPackage(String packagePath) {
       assertEquals("A.java", SourceFileKey.of(packagePath, "A.java"));
-    }
-
-    @Test
-    void aNullPackageKeysAFileByItsNameAlone() {
-      assertEquals("A.java", SourceFileKey.of(null, "A.java"));
     }
   }
 
@@ -295,7 +274,7 @@ class SourceFileKeyTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"build.gradle.kts", "a/B.groovy", "a/B.java.txt"})
+  @ValueSource(strings = {"build.gradle.kts", "a/B.groovy", "a/B.java.txt", "a/B.class"})
   void otherFilesAreNotMeasured(String path) {
     assertFalse(SourceFileKey.isSource(path), path);
   }

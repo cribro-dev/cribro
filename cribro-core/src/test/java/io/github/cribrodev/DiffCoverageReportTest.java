@@ -27,11 +27,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.NavigableSet;
-import java.util.TreeMap;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -40,9 +37,6 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * The changed lines of a module's own sources are split by whether the run covered them, and
  * rendered as the text the build prints.
- *
- * <p>A source root is repository-relative, so a path under it names a file of this module and a
- * path outside every root belongs to another module.
  */
 class DiffCoverageReportTest {
 
@@ -50,7 +44,6 @@ class DiffCoverageReportTest {
   private static final String PACKAGE = ROOT + "/com/uber/nullaway/";
   private static final String SAMPLE = PACKAGE + "Sample.java";
   private static final String OTHER = PACKAGE + "Other.java";
-  private static final List<String> ROOTS = List.of(ROOT);
   private static final String SCOPE = "against master (5c1f60370), from :nullaway:test";
 
   /** The marker a source line carries to acknowledge that nothing covers it. */
@@ -58,11 +51,12 @@ class DiffCoverageReportTest {
 
   @TempDir Path directory;
 
-  /** Returns one changed file with the given line numbers, as {@code measure} takes them. */
-  private static Map<String, NavigableSet<Integer>> changed(String path, Integer... numbers) {
-    Map<String, NavigableSet<Integer>> changed = new LinkedHashMap<>();
-    changed.put(path, new TreeSet<>(Arrays.asList(numbers)));
-    return changed;
+  /** Returns a changed file of package {@code com.uber.nullaway} with the given line numbers. */
+  private static ChangedFile changed(String path, Integer... numbers) {
+    return new ChangedFile(
+        path,
+        "com/uber/nullaway/" + path.substring(path.lastIndexOf('/') + 1),
+        new TreeSet<>(Arrays.asList(numbers)));
   }
 
   /**
@@ -98,20 +92,8 @@ class DiffCoverageReportTest {
    * <p>A test that says nothing about the quoted source therefore gets rows of counters alone,
    * which is also what a report of a file the task cannot read looks like.
    */
-  private DiffCoverageReport measure(
-      Map<String, NavigableSet<Integer>> changed, List<String> sourceRoots, JacocoLines lines) {
-    // The sources written here are snippets rather than real sources, so each file is keyed by
-    // its path below the root directly, without SourceFileKey: the report under test needs only
-    // a key the JaCoCo lines share. The files come ordered by path, as the production caller
-    // passes them.
-    List<ChangedFile> files = new ArrayList<>();
-    for (Map.Entry<String, NavigableSet<Integer>> entry : new TreeMap<>(changed).entrySet()) {
-      String key = ChangedLines.underSourceRoot(entry.getKey(), sourceRoots);
-      if (key != null) {
-        files.add(new ChangedFile(entry.getKey(), key, entry.getValue()));
-      }
-    }
-    return DiffCoverageReport.measure(files, lines, SourceLines.under(directory.toFile()));
+  private DiffCoverageReport measure(List<ChangedFile> changed, JacocoLines lines) {
+    return DiffCoverageReport.measure(changed, lines, SourceLines.under(directory.toFile()));
   }
 
   /** Writes one source file of this module, whose first line is line 1. */
@@ -130,7 +112,7 @@ class DiffCoverageReportTest {
   private DiffCoverageReport measureFiles(List<String> names, List<int[]> counters)
       throws IOException {
     StringBuilder xml = new StringBuilder("<report name=\"test\">");
-    Map<String, NavigableSet<Integer>> changed = new LinkedHashMap<>();
+    List<ChangedFile> changed = new ArrayList<>();
     for (int index = 0; index < names.size(); index++) {
       String name = names.get(index);
       int[] file = counters.get(index);
@@ -144,12 +126,12 @@ class DiffCoverageReportTest {
         numbers.add(number);
       }
       xml.append("</sourcefile></package>");
-      changed.put(PACKAGE + name, numbers);
+      changed.add(new ChangedFile(PACKAGE + name, "com/uber/nullaway/" + name, numbers));
     }
     xml.append("</report>");
     Path report = directory.resolve("multi.xml");
     Files.writeString(report, xml.toString());
-    return measure(changed, ROOTS, JacocoLines.read(List.of(report.toFile())));
+    return measure(changed, JacocoLines.read(List.of(report.toFile())));
   }
 
   /** Returns the counters of a file with executed lines followed by uncovered ones, no branches. */
@@ -199,11 +181,11 @@ class DiffCoverageReportTest {
     @Test
     void twoFilesUnderOneKeyAreEachReportedAgainstTheSameCounters() throws IOException {
       String generated = "nullaway/gen/com/uber/nullaway/Sample.java";
-      Map<String, NavigableSet<Integer>> changed = changed(SAMPLE, 10);
-      changed.put(generated, new TreeSet<>(List.of(11)));
 
       DiffCoverageReport result =
-          measure(changed, List.of(ROOT, "nullaway/gen"), report(line(10, 4, 0, 0) + line(11, 0, 0, 0)));
+          measure(
+              List.of(changed(generated, 11), changed(SAMPLE, 10)),
+              report(line(10, 4, 0, 0) + line(11, 0, 0, 0)));
 
       assertAll(
           () -> assertEquals(List.of(generated, SAMPLE), result.measuredPaths(), "paths"),
@@ -217,7 +199,7 @@ class DiffCoverageReportTest {
 
     @Test
     void anExecutedLineCountsTowardsBothTheExecutedAndTheExecutableTotal() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 4, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 4, 0, 0)));
       assertAll(
           () -> assertEquals(1, result.executedLines(), "executedLines"),
           () -> assertEquals(1, result.executableLines(), "executableLines"),
@@ -226,7 +208,7 @@ class DiffCoverageReportTest {
 
     @Test
     void anUnexecutedLineCountsTowardsTheExecutableTotalAlone() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 0, 0, 0)));
       assertAll(
           () -> assertEquals(0, result.executedLines(), "executedLines"),
           () -> assertEquals(1, result.executableLines(), "executableLines"),
@@ -236,13 +218,13 @@ class DiffCoverageReportTest {
     @Test
     void aChangedLineTheReportOmitsCountsTowardsNeitherTotal() throws IOException {
       DiffCoverageReport result =
-          measure(changed(SAMPLE, 10, 11), ROOTS, report(line(10, 4, 0, 0)));
+          measure(List.of(changed(SAMPLE, 10, 11)), report(line(10, 4, 0, 0)));
       assertEquals(1, result.executableLines());
     }
 
     @Test
     void aLineWithABranchTakenOneWayCountsAsUncoveredThoughItRan() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 4, 1, 1)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 4, 1, 1)));
       assertAll(
           () -> assertEquals(1, result.executedLines(), "executedLines"),
           () -> assertEquals(1, result.uncoveredLines(), "uncoveredLines"));
@@ -250,15 +232,14 @@ class DiffCoverageReportTest {
 
     @Test
     void aLineWithEveryBranchTakenIsNotCountedAsUncovered() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 4, 2, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 4, 2, 0)));
       assertEquals(0, result.uncoveredLines());
     }
 
     @Test
     void onlyTheFilesTheCountsCameFromAreNamedAsMeasured() throws IOException {
-      Map<String, NavigableSet<Integer>> changed = changed(SAMPLE, 10);
-      changed.put(OTHER, new TreeSet<>(List.of(10)));
-      DiffCoverageReport result = measure(changed, ROOTS, report(line(10, 0, 0, 0)));
+      DiffCoverageReport result =
+          measure(List.of(changed(OTHER, 10), changed(SAMPLE, 10)), report(line(10, 0, 0, 0)));
       assertEquals(List.of(SAMPLE), result.measuredPaths());
     }
   }
@@ -271,8 +252,8 @@ class DiffCoverageReportTest {
      * that does not exist.
      */
     @Test
-    void aFileUnderARootThatNoReportMentionsIsNamedAsMissingFromTheReport() throws IOException {
-      DiffCoverageReport result = measure(changed(OTHER, 10), ROOTS, report(""));
+    void aFileThatNoReportMentionsIsNamedAsMissingFromTheReport() throws IOException {
+      DiffCoverageReport result = measure(List.of(changed(OTHER, 10)), report(""));
       assertEquals(List.of(OTHER), result.notInAnyReport);
     }
 
@@ -282,7 +263,7 @@ class DiffCoverageReportTest {
      */
     @Test
     void aFileWhoseChangedLinesEmitNoBytecodeIsNamedSeparately() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(99, 4, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(99, 4, 0, 0)));
       assertAll(
           () -> assertEquals(List.of(), result.notInAnyReport, "unmeasuredPaths"),
           () ->
@@ -294,69 +275,6 @@ class DiffCoverageReportTest {
                       ">> the total >>"),
                   result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList()));
     }
-
-    @Test
-    void aFileOfAnotherModuleIsLeftOutOfTheReportEntirely() throws IOException {
-      DiffCoverageReport result =
-          measure(
-              changed("other/src/main/java/com/uber/nullaway/Sample.java", 10),
-              ROOTS,
-              report(line(10, 0, 0, 0)));
-      assertAll(
-          () -> assertEquals(List.of(), result.notInAnyReport, "unmeasuredPaths"),
-          () -> assertEquals(0, result.executableLines(), "executableLines"));
-    }
-
-    /**
-     * :nullaway compiles a second source root, the shared sources of
-     * library-model/library-model-generator, so a file of either root is a file of this module.
-     */
-    @Test
-    void aFileUnderASecondSourceRootIsMeasuredLikeOneUnderTheFirst() throws IOException {
-      String shared = "library-model/library-model-generator/src/shared/java";
-      DiffCoverageReport result =
-          measure(
-              changed(shared + "/com/uber/nullaway/Sample.java", 10),
-              List.of(ROOT, shared),
-              report(line(10, 4, 0, 0)));
-      assertEquals(List.of(shared + "/com/uber/nullaway/Sample.java"), result.measuredPaths());
-    }
-
-    /**
-     * Where one root is a prefix of another, the longer root has to win, or every file of the
-     * nested root is keyed with the extra directories still in its package path.
-     */
-    @Test
-    void aFileUnderTwoNestedRootsIsKeyedFromTheLongerOneWhicheverComesFirst() throws IOException {
-      DiffCoverageReport result =
-          measure(changed(SAMPLE, 10), List.of("nullaway/src", ROOT), report(line(10, 4, 0, 0)));
-      assertEquals(List.of(SAMPLE), result.measuredPaths());
-    }
-
-    /**
-     * A root built from a {@code java.nio.file.Path} carries the platform separator, while the
-     * changed paths come from a git diff and always use {@code /}.
-     */
-    @Test
-    void aRootSpelledWithBackslashesStillMatchesAGitPath() throws IOException {
-      DiffCoverageReport result =
-          measure(changed(SAMPLE, 10), List.of("nullaway\\src\\main\\java"),
-              report(line(10, 4, 0, 0)));
-      assertEquals(List.of(SAMPLE), result.measuredPaths());
-    }
-
-    /** The test tree of this module shares its prefix and is still not a main source root. */
-    @Test
-    void aTestSourceOfThisModuleIsLeftOutOfTheReportEntirely() throws IOException {
-      DiffCoverageReport result =
-          measure(
-              changed("nullaway/src/test/java/com/uber/nullaway/SampleTest.java", 10),
-              ROOTS,
-              report(line(10, 0, 0, 0)));
-      assertAll(
-          () -> assertEquals(List.of(), result.notInAnyReport, "unmeasuredPaths"),
-          () -> assertEquals(0, result.executableLines(), "executableLines"));
-    }
   }
 
   @Nested
@@ -365,7 +283,7 @@ class DiffCoverageReportTest {
     @Test
     void anUncoveredLineIsQuotedFromTheWorkingTreeWithItsIndentationStripped() throws IOException {
       writeSource("Sample.java", "class Sample {", "    return null;");
-      DiffCoverageReport result = measure(changed(SAMPLE, 2), ROOTS, report(line(2, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 2)), report(line(2, 0, 0, 0)));
       assertEquals(
           "      2: not executed: return null;",
           onlyLineStartingWith(result.render(SCOPE, false, List.of(), Limits.NONE), "      2: "));
@@ -375,7 +293,7 @@ class DiffCoverageReportTest {
     @Test
     void aLineLongerThanTheQuoteWidthIsCutAndMarked() throws IOException {
       writeSource("Sample.java", "x".repeat(130));
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 0)));
       assertEquals(
           "      1: not executed: " + "x".repeat(100) + "...",
           onlyLineStartingWith(result.render(SCOPE, false, List.of(), Limits.NONE), "      1: "));
@@ -384,7 +302,7 @@ class DiffCoverageReportTest {
     @Test
     void aLineExactlyAtTheQuoteWidthIsQuotedWhole() throws IOException {
       writeSource("Sample.java", "x".repeat(100));
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 0)));
       assertEquals(
           "      1: not executed: " + "x".repeat(100),
           onlyLineStartingWith(result.render(SCOPE, false, List.of(), Limits.NONE), "      1: "));
@@ -396,7 +314,7 @@ class DiffCoverageReportTest {
      */
     @Test
     void aLineWithNoSourceToQuoteIsReportedWithItsCountersAlone() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 7), ROOTS, report(line(7, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 7)), report(line(7, 0, 0, 0)));
       assertEquals(
           "      7: not executed",
           onlyLineStartingWith(result.render(SCOPE, false, List.of(), Limits.NONE), "      7: "));
@@ -410,7 +328,7 @@ class DiffCoverageReportTest {
     void aLineMarkedInACommentIsListedUnderTheAcknowledgedHeadingRatherThanAsWork()
         throws IOException {
       writeSource("Sample.java", "throw new AssertionError(); " + IGNORE);
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 0)));
       assertLinesMatch(
           List.of(
               "Diff coverage " + SCOPE,
@@ -429,7 +347,7 @@ class DiffCoverageReportTest {
     void anAcknowledgedLineStillCountsAsUnexecutedInTheTotal() throws IOException {
       writeSource("Sample.java", "throw new AssertionError(); " + IGNORE, "return 1;");
       DiffCoverageReport result =
-          measure(changed(SAMPLE, 1, 2), ROOTS, report(line(1, 0, 0, 0) + line(2, 4, 0, 0)));
+          measure(List.of(changed(SAMPLE, 1, 2)), report(line(1, 0, 0, 0) + line(2, 4, 0, 0)));
       assertAll(
           () -> assertEquals(1, result.executedLines(), "executedLines"),
           () -> assertEquals(2, result.executableLines(), "executableLines"),
@@ -439,7 +357,7 @@ class DiffCoverageReportTest {
     @Test
     void aMarkerInABlockCommentAcknowledgesItsLineToo() throws IOException {
       writeSource("Sample.java", "throw new AssertionError(); /* diff-coverage: ignore */");
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 0)));
       assertEquals(1, result.acknowledgedLines());
     }
 
@@ -447,7 +365,7 @@ class DiffCoverageReportTest {
     @Test
     void aMarkerWithNoCommentOpenerLeavesTheLineInTheWork() throws IOException {
       writeSource("Sample.java", "String marker = \"diff-coverage: ignore\";");
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 0)));
       String rendered = result.render(SCOPE, false, List.of(), Limits.NONE);
       assertAll(
           () -> assertEquals(0, result.acknowledgedLines(), "acknowledgedLines"),
@@ -463,14 +381,14 @@ class DiffCoverageReportTest {
     @Test
     void aMarkerWhoseWordOnlyStartsWithIgnoreDoesNotAcknowledge() throws IOException {
       writeSource("Sample.java", "throw new AssertionError(); // diff-coverage: ignore-until-1.2");
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 0)));
       assertEquals(0, result.acknowledgedLines());
     }
 
     @Test
     void aCoveredLineCarryingTheMarkerIsNotCountedAsAcknowledged() throws IOException {
       writeSource("Sample.java", "return 1; " + IGNORE);
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 4, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 4, 0, 0)));
       assertAll(
           () -> assertEquals(0, result.acknowledgedLines(), "acknowledgedLines"),
           () -> assertEquals(0, result.uncoveredLines(), "uncoveredLines"));
@@ -483,7 +401,7 @@ class DiffCoverageReportTest {
     @Test
     void aFileWhoseUncoveredLinesAreAllAcknowledgedIsNotCountedAsFullyCovered() throws IOException {
       writeSource("Sample.java", "throw new AssertionError(); " + IGNORE);
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 0)));
       String rendered = result.render(SCOPE, false, List.of(), Limits.NONE);
       assertFalse(rendered.contains("fully covered"), rendered);
     }
@@ -492,7 +410,7 @@ class DiffCoverageReportTest {
     void aFileWithBothKindsOfUncoveredLineIsDescribedInBothLists() throws IOException {
       writeSource("Sample.java", "throw new AssertionError(); " + IGNORE, "return 1;");
       DiffCoverageReport result =
-          measure(changed(SAMPLE, 1, 2), ROOTS, report(line(1, 0, 0, 0) + line(2, 0, 0, 0)));
+          measure(List.of(changed(SAMPLE, 1, 2)), report(line(1, 0, 0, 0) + line(2, 0, 0, 0)));
       assertLinesMatch(
           List.of(
               "Diff coverage " + SCOPE,
@@ -521,8 +439,7 @@ class DiffCoverageReportTest {
       writeSource("Sample.java", "a();", "b();", "c(); " + IGNORE);
       DiffCoverageReport result =
           measure(
-              changed(SAMPLE, 1, 2, 3),
-              ROOTS,
+              List.of(changed(SAMPLE, 1, 2, 3)),
               report(line(1, 0, 0, 0) + line(2, 0, 0, 0) + line(3, 0, 0, 0)));
       String rendered = result.render(SCOPE, false, List.of(), new Limits(4, 10, 2));
       assertAll(
@@ -563,8 +480,7 @@ class DiffCoverageReportTest {
       writeSource("Sample.java", "a(); " + IGNORE, "b(); " + IGNORE, "c(); " + IGNORE);
       DiffCoverageReport result =
           measure(
-              changed(SAMPLE, 1, 2, 3),
-              ROOTS,
+              List.of(changed(SAMPLE, 1, 2, 3)),
               report(line(1, 0, 0, 0) + line(2, 0, 0, 0) + line(3, 0, 0, 0)));
       assertEquals(
           List.of("      1: not executed: a(); " + IGNORE, "      2 more acknowledged lines"),
@@ -580,8 +496,7 @@ class DiffCoverageReportTest {
       writeSource("Sample.java", "if (a) {", "  return 1;", "if (b) {");
       DiffCoverageReport result =
           measure(
-              changed(SAMPLE, 1, 2, 3),
-              ROOTS,
+              List.of(changed(SAMPLE, 1, 2, 3)),
               report(line(1, 4, 1, 1) + line(2, 0, 0, 0) + line(3, 0, 0, 2)));
       assertLinesMatch(
           List.of(
@@ -607,7 +522,7 @@ class DiffCoverageReportTest {
     @Test
     void aLineNeitherExecutedNorFullyBranchedTakesOneRowCarryingBothCounts() throws IOException {
       writeSource("Sample.java", "if (sourceType == null) {");
-      DiffCoverageReport result = measure(changed(SAMPLE, 1), ROOTS, report(line(1, 0, 0, 2)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 1)), report(line(1, 0, 0, 2)));
       String rendered = result.render(SCOPE, false, List.of(), Limits.NONE);
       assertAll(
           () ->
@@ -628,7 +543,7 @@ class DiffCoverageReportTest {
      */
     @Test
     void aChangeOfNonExecutableLinesRendersThatInsteadOfAZeroTotal() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(99, 4, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(99, 4, 0, 0)));
       assertLinesMatch(
           List.of(
               "Diff coverage " + SCOPE,
@@ -646,23 +561,13 @@ class DiffCoverageReportTest {
      */
     @Test
     void aChangeThatReachesNoneOfThisModulesSourcesRendersNothingAtAll() throws IOException {
-      DiffCoverageReport result = measure(Map.of(), ROOTS, report(""));
-      assertEquals("", result.render(SCOPE, false, List.of(), Limits.NONE));
-    }
-
-    @Test
-    void aChangeOfAnotherModuleAloneRendersNothingAtAll() throws IOException {
-      DiffCoverageReport result =
-          measure(
-              changed("other/src/main/java/com/uber/nullaway/Sample.java", 10),
-              ROOTS,
-              report(line(10, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(), report(""));
       assertEquals("", result.render(SCOPE, false, List.of(), Limits.NONE));
     }
 
     @Test
     void anEditAfterTheRunIsAnnouncedBeforeTheCountsItInvalidates() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 0, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 0, 0, 0)));
       assertLinesMatch(
           List.of(
               "Diff coverage " + SCOPE,
@@ -677,9 +582,8 @@ class DiffCoverageReportTest {
 
     @Test
     void aFileNoReportMentionsAndOneWithNoBytecodeGetDifferentHeadings() throws IOException {
-      Map<String, NavigableSet<Integer>> changed = changed(SAMPLE, 10);
-      changed.put(OTHER, new TreeSet<>(List.of(10)));
-      DiffCoverageReport result = measure(changed, ROOTS, report(line(99, 4, 0, 0)));
+      DiffCoverageReport result =
+          measure(List.of(changed(OTHER, 10), changed(SAMPLE, 10)), report(line(99, 4, 0, 0)));
       assertLinesMatch(
           List.of(
               "Diff coverage " + SCOPE,
@@ -698,7 +602,7 @@ class DiffCoverageReportTest {
     /** A change whose lines branch nowhere gets no branch pair, rather than a 0/0 one. */
     @Test
     void aChangeWithNoBranchAtAllReportsLinesAlone() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 4, 0, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 4, 0, 0)));
       assertEquals(
           "Total: 1/1 changed lines executed.",
           onlyLineStartingWith(result.render(SCOPE, false, List.of(), Limits.NONE), "Total: "));
@@ -710,7 +614,7 @@ class DiffCoverageReportTest {
      */
     @Test
     void everyLineExecutedWithABranchUntakenStillReportsTheBranchPair() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 4, 1, 1)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 4, 1, 1)));
       assertEquals(
           "Total: 1/1 changed lines executed, 1/2 branches covered.",
           onlyLineStartingWith(result.render(SCOPE, false, List.of(), Limits.NONE), "Total: "));
@@ -718,7 +622,7 @@ class DiffCoverageReportTest {
 
     @Test
     void aFullyTakenBranchCountsTowardsBothSidesOfThePair() throws IOException {
-      DiffCoverageReport result = measure(changed(SAMPLE, 10), ROOTS, report(line(10, 4, 2, 0)));
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 4, 2, 0)));
       assertEquals(
           "Total: 1/1 changed lines executed, 2/2 branches covered.",
           onlyLineStartingWith(result.render(SCOPE, false, List.of(), Limits.NONE), "Total: "));
@@ -851,7 +755,9 @@ class DiffCoverageReportTest {
         xml.append(line(number, 0, 0, 0));
         numbers.add(number);
       }
-      return measure(Map.of(SAMPLE, numbers), ROOTS, report(xml.toString()));
+      return measure(
+          List.of(new ChangedFile(SAMPLE, "com/uber/nullaway/Sample.java", numbers)),
+          report(xml.toString()));
     }
 
     @Test

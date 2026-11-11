@@ -17,6 +17,7 @@ package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertLinesMatch;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -182,5 +183,32 @@ class DiffCoverageTest {
     assertEquals(
         "--tests 'p.ATest.one' --tests 'p.ATest$Inner.two'",
         DiffCoverage.gradleTestFilter(List.of("p.ATest.one", "p.ATest$Inner.two")));
+  }
+
+  /** The file lies at the root of its source root, so its path spells none of its package. */
+  @Test
+  void aKotlinFileIsMeasuredAgainstTheCountersOfThePackageItDeclares() throws Exception {
+    new TestGitRepository(directory).initWithOneCommit();
+    Path source = directory.resolve("m/src/main/kotlin/Calc.kt");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package demo.math\n\nfun two() = 2\n");
+    File report = directory.resolve("jacoco.xml").toFile();
+    Files.writeString(
+        report.toPath(),
+        "<report name=\"test\"><package name=\"demo/math\"><sourcefile name=\"Calc.kt\">"
+            + "<line nr=\"3\" mi=\"0\" ci=\"4\" mb=\"0\" cb=\"0\"/>"
+            + "</sourcefile></package></report>");
+
+    String text =
+        DiffCoverage.in(new Git(directory.toFile()))
+            .baseRef("master")
+            .sourceRoots(List.of("m/src/main/kotlin"))
+            .reports(List.of(report))
+            .outputFile(directory.resolve("diff-coverage.txt").toFile())
+            .describe();
+
+    assertLinesMatch(
+        List.of(">> the files >>", "Total: 1/1 changed lines executed.", ">> the report paths >>"),
+        text.lines().toList());
   }
 }

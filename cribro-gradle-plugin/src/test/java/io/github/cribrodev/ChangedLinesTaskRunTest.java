@@ -16,6 +16,7 @@
 package io.github.cribrodev;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
@@ -33,7 +34,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The changed-lines file names the base ref it was measured against in its header, which the
- * pitestDiff report prints, and the lines changed under the module's source root.
+ * pitestDiff report prints, and the lines changed under the module's source root, each file under
+ * the package it declares.
  *
  * <p>The task runs in a synthetic Gradle project against a repository built here, with the system
  * and global git configuration switched off.
@@ -42,7 +44,7 @@ class ChangedLinesTaskRunTest {
 
   @TempDir Path directory;
 
-  private Path write() throws IOException {
+  private Path write(String baseRef) throws IOException {
     Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
     ChangedLinesTask task =
         project.getTasks().register("changedLines", ChangedLinesTask.class).get();
@@ -57,7 +59,7 @@ class ChangedLinesTaskRunTest {
                     service ->
                         service.getParameters().getRepositoryRoot().set(directory.toFile())));
     task.getSourceRoots().set(List.of("src/main/java"));
-    task.getBaseRef().set("HEAD");
+    task.getBaseRef().set(baseRef);
     Path output = directory.resolve("build/diff/changed-lines.txt");
     task.getOutputFile().set(output.toFile());
     task.write();
@@ -75,14 +77,43 @@ class ChangedLinesTaskRunTest {
     String head = revParse();
     Files.writeString(source, "package com.x;\nchanged\na3\n");
 
-    Path file = write();
+    Path file = write("HEAD");
 
     assertEquals(
         "against HEAD (" + head.substring(0, 9) + ")", ChangedLinesFile.readHeader(file));
     assertEquals(
         Map.of("com/x/A.java", new TreeSet<>(List.of(2))), ChangedLinesFile.read(file));
-    assertEquals(
-        Map.of("com/x/A.java", "src/main/java/com/x/A.java"), ChangedLinesFile.readPaths(file));
+  }
+
+  @Test
+  void aFileIsKeyedByThePackageItDeclaresAndRecordedAtItsPath() throws Exception {
+    repositoryWithAnEmptyCommit();
+    Path source = directory.resolve("src/main/java/A.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package com.x;\nclass A {}\n");
+
+    Path file = write("HEAD");
+
+    assertEquals(Map.of("com/x/A.java", "src/main/java/A.java"), ChangedLinesFile.readPaths(file));
+  }
+
+  @Test
+  void aRepositoryWithNoBaseLeavesAFileWithNoLines() throws Exception {
+    repositoryWithAnEmptyCommit();
+    Path source = directory.resolve("src/main/java/A.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "class A {}\n");
+
+    Path file = write(null);
+
+    assertAll(
+        () -> assertEquals("no base ref resolved", ChangedLinesFile.readHeader(file)),
+        () -> assertEquals(Map.of(), ChangedLinesFile.read(file)));
+  }
+
+  private void repositoryWithAnEmptyCommit() throws IOException, InterruptedException {
+    run("init", "--initial-branch=master", ".");
+    run("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "--allow-empty", "-m", "seed");
   }
 
   private String revParse() throws Exception {

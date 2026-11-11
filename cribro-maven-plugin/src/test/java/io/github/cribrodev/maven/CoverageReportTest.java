@@ -129,7 +129,7 @@ class CoverageReportTest {
     assertEquals(ICounter.EMPTY, sample.getLine(4).getStatus(), "status of line 4");
   }
 
-  /** JaCoCo names the default package with an empty string; a file in it is keyed by its name. */
+  /** JaCoCo names the default package with an empty string. */
   @Test
   void aSourceFileInTheDefaultPackageIsKeyedByItsNameAlone() {
     SourceFileCoverageImpl sample = new SourceFileCoverageImpl("A.java", "");
