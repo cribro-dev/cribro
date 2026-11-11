@@ -51,8 +51,9 @@ the changed `.java` files only; a change to a `.kt` file adds no method and no `
 The report measures the tests of surefire's `default-test` execution. Only `.java` and `.kt` files under the main
 source directories count, the `sourceDirs` of `kotlin-maven-plugin` included; Groovy changes are not measured. A file
 is matched to its counters by the package it declares and its file name, as its class files record them, not by its
-directory; two files of one name in one package under two source roots share one set of counters. A build that skips
-the tests prints no report.
+directory. Two files of one name that declare one package, in one source root or in two, share one set of counters,
+and the PIT report quotes the lines of both from the path that sorts first. A build that skips the tests prints no
+report.
 
 ## Mutation testing
 

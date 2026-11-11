@@ -263,8 +263,8 @@ public final class ChangedLines {
    * the {@link SourceFileKey} read from the working tree, which is how a JaCoCo report and a PIT
    * mutant name the file.
    *
-   * <p>Two files may share a key where two source roots each hold a file of one name in one
-   * package; the list keeps both, and {@link ChangedLinesFile#write} and {@link
+   * <p>Two files share a key where they have one name and declare one package, in one source root
+   * or in two; the list keeps both, and {@link ChangedLinesFile#write} and {@link
    * DiffCoverageReport#measure} say how each treats them.
    *
    * @param repository the repository root, where the files are read from
