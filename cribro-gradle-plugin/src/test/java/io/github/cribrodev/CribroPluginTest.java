@@ -15,7 +15,6 @@
  */
 package io.github.cribrodev;
 
-import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,7 +23,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.gradle.api.Project;
 import org.gradle.api.tasks.SourceSet;
@@ -35,90 +33,115 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The plugin replaces Gradle's bundled JaCoCo only with a newer one, so the comparison decides
- * whether a build on a future Gradle is downgraded; the source directories it measures are those
- * that hold sources, whatever else the build does with them.
+ * The plugin measures the directories of the main source set that hold Java or Kotlin sources,
+ * puts the PIT plugins a build names on PIT's classpath, and replaces Gradle's bundled JaCoCo only
+ * with a newer one, so the version comparison decides whether a build on a future Gradle is
+ * downgraded.
  */
 class CribroPluginTest {
 
   @TempDir Path directory;
 
+  /**
+   * Returns a project in the temporary directory that applies the java plugin and cribro, with
+   * the gradle.properties given. Resolving a configuration locks files under the Gradle user home
+   * for the life of the JVM, so that home lies under the build directory rather than in the
+   * temporary directory, which JUnit deletes after the test.
+   */
+  private Project javaProject(String gradleProperties) throws IOException {
+    Files.writeString(directory.resolve("gradle.properties"), gradleProperties);
+    Project project =
+        ProjectBuilder.builder()
+            .withProjectDir(directory.toFile())
+            .withGradleUserHomeDir(new File("build/tmp/projectBuilderUserHome"))
+            .build();
+    project.getPluginManager().apply("java");
+    project.getPluginManager().apply(CribroPlugin.class);
+    return project;
+  }
+
+  private static SourceSet main(Project project) {
+    return project
+        .getExtensions()
+        .getByType(SourceSetContainer.class)
+        .getByName(SourceSet.MAIN_SOURCE_SET_NAME);
+  }
+
   @Nested
-  class TheSourceDirectories {
+  class TheSourceRoots {
 
-    private SourceSet main(Project project) {
+    /**
+     * Returns the roots changedLines reads. The temporary directory lies in no repository, so they
+     * are relative to the project directory.
+     */
+    private List<String> roots(Project project) {
       return project
-          .getExtensions()
-          .getByType(SourceSetContainer.class)
-          .getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-    }
-
-    private static Set<String> names(Set<File> dirs) {
-      return dirs.stream().map(File::getName).collect(Collectors.toSet());
+          .getTasks()
+          .named("changedLines", ChangedLinesTask.class)
+          .get()
+          .getSourceRoots()
+          .get()
+          .stream()
+          .sorted()
+          .collect(Collectors.toList());
     }
 
     @Test
-    void theJavaDirectoriesAreSourceDirectoriesAndTheResourcesAreNot() {
-      Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
-      project.getPluginManager().apply("java");
+    void onlyTheJavaDirectoryOfAJavaBuildIsARoot() throws IOException {
+      Project project = javaProject("");
 
-      assertEquals(Set.of("java"), names(CribroPlugin.sourceDirs(main(project))));
+      assertEquals(List.of("src/main/java"), roots(project));
+    }
+
+    @Test
+    void aJavaDirectoryThatIsAlsoAResourcesDirectoryStaysARoot() throws IOException {
+      Project project = javaProject("");
+      main(project).getResources().srcDir("src/main/java");
+      main(project).getResources().exclude("**/*.java");
+
+      assertEquals(List.of("src/main/java"), roots(project));
     }
 
     /**
-     * A build may list its Java directory as a resources directory too, for files kept beside the
-     * classes such as mapper XML; it stays a source directory.
+     * Cribro registers its tasks once the java plugin is applied, and the Kotlin JVM plugin adds
+     * {@code src/main/kotlin} to {@code allJava} only after it has applied the java plugin.
      */
     @Test
-    void aSourceDirectoryThatIsAlsoAResourcesDirectoryStaysASourceDirectory() {
-      Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
-      project.getPluginManager().apply("java");
-      SourceSet main = main(project);
-      main.getResources().srcDir("src/main/java");
-      main.getResources().exclude("**/*.java");
+    void aDirectoryTheKotlinPluginAddsAfterCribroIsARoot() throws IOException {
+      Project project = javaProject("");
+      main(project).getAllJava().srcDir("src/main/kotlin");
 
-      assertEquals(Set.of("java"), names(CribroPlugin.sourceDirs(main)));
+      assertEquals(List.of("src/main/java", "src/main/kotlin"), roots(project));
     }
 
-    /** A plugin that adds its directories to {@code allJava}, as the Kotlin plugin does, is seen. */
     @Test
-    void aDirectoryAddedToAllJavaIsASourceDirectory() {
-      Project project = ProjectBuilder.builder().withProjectDir(directory.toFile()).build();
-      project.getPluginManager().apply("java");
-      SourceSet main = main(project);
-      main.getAllJava().srcDir("src/main/kotlin");
+    void pitestDiffSearchesADirectoryTheKotlinPluginAddsAfterCribro() throws IOException {
+      Project project = javaProject("");
+      main(project).getAllJava().srcDir("src/main/kotlin");
 
-      assertEquals(Set.of("java", "kotlin"), names(CribroPlugin.sourceDirs(main)));
+      List<String> searched =
+          project
+              .getTasks()
+              .named("pitestDiff", PitestDiffTask.class)
+              .get()
+              .getMainSourceDirs()
+              .getFiles()
+              .stream()
+              .map(dir -> project.relativePath(dir).replace(File.separatorChar, '/'))
+              .sorted()
+              .collect(Collectors.toList());
+      assertEquals(List.of("src/main/java", "src/main/kotlin"), searched);
     }
   }
 
   @Nested
-  class ThePitestPlugins {
+  class ThePitestClasspath {
 
     /**
-     * Applies cribro to a build that sets the property, as {@code -P} or gradle.properties would.
-     * Resolving a configuration locks files under the Gradle user home for the life of the JVM,
-     * so that home lies under the build directory rather than in the temporary directory, which
-     * JUnit deletes after the test.
+     * Returns what the pitest configuration asks for. The default dependencies are added only when
+     * the configuration is resolved, and with no repository the result names them as unresolved.
      */
-    private Project build(String pitestPlugins) throws IOException {
-      Files.writeString(
-          directory.resolve("gradle.properties"), "cribro.pitestPlugins=" + pitestPlugins + "\n");
-      Project project =
-          ProjectBuilder.builder()
-              .withProjectDir(directory.toFile())
-              .withGradleUserHomeDir(new File("build/tmp/projectBuilderUserHome"))
-              .build();
-      project.getPluginManager().apply("java");
-      project.getPluginManager().apply(CribroPlugin.class);
-      return project;
-    }
-
-    /**
-     * Returns what the configuration asks for. The default dependencies are added only when the
-     * configuration is resolved, and with no repository the result names them as unresolved.
-     */
-    private static List<String> dependencies(Project project) {
+    private List<String> requested(Project project) {
       return project
           .getConfigurations()
           .getByName(CribroPlugin.PITEST_CONFIGURATION)
@@ -128,18 +151,30 @@ class CribroPluginTest {
           .getDependencies()
           .stream()
           .map(dependency -> dependency.getRequested().getDisplayName())
+          .sorted()
           .collect(Collectors.toList());
     }
 
     @Test
-    void theNamedPluginsJoinPitOnItsClasspath() throws IOException {
-      Project project = build("com.arcmutate:pitest-kotlin-plugin:1.5.2, demo:other:2");
+    void withNoPluginsNamedPitRunsAlone() throws IOException {
+      Project project = javaProject("cribro.pitestVersion=1.0\n");
 
-      List<String> dependencies = dependencies(project);
-      assertAll(
-          () -> assertTrue(dependencies.contains("com.arcmutate:pitest-kotlin-plugin:1.5.2"), dependencies.toString()),
-          () -> assertTrue(dependencies.contains("demo:other:2"), dependencies.toString()),
-          () -> assertTrue(dependencies.stream().anyMatch(it -> it.startsWith("org.pitest:pitest-command-line:")), dependencies.toString()));
+      assertEquals(List.of("org.pitest:pitest-command-line:1.0"), requested(project));
+    }
+
+    @Test
+    void theNamedPluginsJoinPitOnItsClasspath() throws IOException {
+      Project project =
+          javaProject(
+              "cribro.pitestVersion=1.0\n"
+                  + "cribro.pitestPlugins=com.arcmutate:pitest-kotlin-plugin:1.5.2, demo:other:2\n");
+
+      assertEquals(
+          List.of(
+              "com.arcmutate:pitest-kotlin-plugin:1.5.2",
+              "demo:other:2",
+              "org.pitest:pitest-command-line:1.0"),
+          requested(project));
     }
   }
 

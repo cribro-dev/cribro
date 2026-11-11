@@ -20,10 +20,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
+import java.util.Set;
 import java.util.TreeSet;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -91,10 +95,26 @@ class ChangedLinesTest {
   }
 
   @Test
+  void aFileUnderASecondSourceRootIsKeptLikeOneUnderTheFirst() {
+    assertEquals(
+        List.of(new ChangedFile("m/src/shared/java/com/x/A.java", "com/x/A.java", LINES)),
+        underSourceRoots("m/src/shared/java/com/x/A.java", "m/src/main/java", "m/src/shared/java"));
+  }
+
+  @Test
   void aFileUnderNestedRootsFallsBackToItsPathBelowTheInnermostRoot() {
     assertEquals(
         List.of(new ChangedFile("m/src/main/java/gen/com/x/A.java", "com/x/A.java", LINES)),
-        underSourceRoots("m/src/main/java/gen/com/x/A.java", "m/src/main/java", "m/src/main/java/gen"));
+        underSourceRoots(
+            "m/src/main/java/gen/com/x/A.java", "m/src/main/java", "m/src/main/java/gen"));
+  }
+
+  @Test
+  void theInnermostOfNestedRootsWinsWhenItIsListedFirst() {
+    assertEquals(
+        List.of(new ChangedFile("m/src/main/java/gen/com/x/A.java", "com/x/A.java", LINES)),
+        underSourceRoots(
+            "m/src/main/java/gen/com/x/A.java", "m/src/main/java/gen", "m/src/main/java"));
   }
 
   @Test
@@ -105,19 +125,51 @@ class ChangedLinesTest {
   }
 
   @Test
-  void theFilesComeOrderedByPath() throws IOException {
+  void theFilesComeOrderedByPath() {
+    Map<String, NavigableSet<Integer>> changed = new LinkedHashMap<>();
+    changed.put("src/b/B.java", LINES);
+    changed.put("src/a/A.java", LINES);
+
     List<ChangedFile> files =
-        ChangedLines.underSourceRoots(
-            repository.toFile(),
-            Map.of("src/b/B.java", LINES, "src/a/A.java", LINES),
-            List.of("src"));
-    assertEquals(List.of("src/a/A.java", "src/b/B.java"), files.stream().map(ChangedFile::path).toList());
+        ChangedLines.underSourceRoots(repository.toFile(), changed, List.of("src"));
+
+    assertEquals(
+        List.of("src/a/A.java", "src/b/B.java"), files.stream().map(ChangedFile::path).toList());
   }
 
-  @Test
-  void theDiffAndTheUntrackedFilesAreLimitedToJavaAndKotlinSources() {
-    List<String> command = ChangedLines.diffCommand("origin/main");
-    assertEquals(
-        List.of("--", "*.java", "*.kt"), command.subList(command.indexOf("--"), command.size()));
+  @Nested
+  class AgainstABase {
+
+    private TestGitRepository git;
+
+    @BeforeEach
+    void createRepository() {
+      git = new TestGitRepository(repository);
+    }
+
+    private Map<String, NavigableSet<Integer>> measure() {
+      return ChangedLines.measure(new Git(repository.toFile()), "master").lines();
+    }
+
+    @Test
+    void onlyTheSourcesCribroMeasuresAreTakenFromTheDiff() throws Exception {
+      git.initWithOneCommit();
+      write("Calc.kt", "fun one() = 1\n");
+      write("Build.groovy", "def one() { 1 }\n");
+      git.commit("sources");
+      write("Calc.kt", "fun one() = 1\nfun two() = 2\n");
+      write("Build.groovy", "def one() { 1 }\ndef two() { 2 }\n");
+
+      assertEquals(Map.of("Calc.kt", Set.of(2)), measure());
+    }
+
+    @Test
+    void onlyTheSourcesCribroMeasuresAreTakenFromTheUntrackedFiles() throws Exception {
+      git.initWithOneCommit();
+      write("Calc.kt", "fun one() = 1\nfun two() = 2\n");
+      write("Build.groovy", "def one() { 1 }\n");
+
+      assertEquals(Map.of("Calc.kt", Set.of(1, 2)), measure());
+    }
   }
 }

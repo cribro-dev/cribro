@@ -15,7 +15,6 @@
  */
 package io.github.cribrodev;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -24,13 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,12 +35,18 @@ import org.junit.jupiter.api.io.TempDir;
  * apart from an empty result.
  *
  * <p>The cache is asserted by changing the repository between two identical calls, since a call
- * that ran again would report the new state. The repository is built here with the system and
- * global configuration switched off, so that the machine running the tests decides nothing.
+ * that ran again would report the new state.
  */
 class GitTest {
 
   @TempDir Path directory;
+
+  private TestGitRepository repository;
+
+  @BeforeEach
+  void createRepository() {
+    repository = new TestGitRepository(directory);
+  }
 
   @Test
   void aRepeatedCommandKeepsTheAnswerOfItsFirstRun() throws Exception {
@@ -183,19 +185,12 @@ class GitTest {
         "root of the working directory, given as an empty relative path");
   }
 
-  /** Creates a repository whose only commit is on master. */
   private void repositoryWithOneCommit() throws Exception {
-    run("init", "--initial-branch=master", ".");
-    run("config", "user.email", "test@example.com");
-    run("config", "user.name", "Test");
-    commit("seed");
+    repository.initWithOneCommit();
   }
 
-  /** Adds a file named after the message and commits everything in the tree. */
   private void commit(String message) throws Exception {
-    Files.writeString(directory.resolve(message + ".txt"), message + "\n");
-    run("add", "-A");
-    run("commit", "-m", message);
+    repository.commit(message);
   }
 
   /** Returns the commit HEAD names now, read outside the instance so no cache stands between. */
@@ -204,29 +199,6 @@ class GitTest {
   }
 
   private String run(String... arguments) throws IOException, InterruptedException {
-    List<String> command = new ArrayList<>(List.of("git"));
-    command.addAll(List.of(arguments));
-    ProcessBuilder builder =
-        new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true);
-    Map<String, String> environment = builder.environment();
-    // A path git can read and will not find, rather than /dev/null, which names a file of its own
-    // on Windows and would leave the configuration of the machine deciding what these tests see.
-    String noConfig = directory.resolve("no-git-config").toString();
-    environment.put("GIT_CONFIG_GLOBAL", noConfig);
-    environment.put("GIT_CONFIG_SYSTEM", noConfig);
-    environment.put("GIT_CONFIG_NOSYSTEM", "1");
-    // git commit starts a detached git maintenance run --auto, which can still be writing under
-    // .git after the commit exits, and JUnit then fails to delete the temporary directory.
-    environment.put("GIT_CONFIG_COUNT", "1");
-    environment.put("GIT_CONFIG_KEY_0", "maintenance.auto");
-    environment.put("GIT_CONFIG_VALUE_0", "false");
-    Process process = builder.start();
-    // Read before waiting: nothing else drains the pipe, so a command that filled it would hang.
-    String output;
-    try (InputStream stream = process.getInputStream()) {
-      output = new String(stream.readAllBytes(), UTF_8);
-    }
-    assertEquals(0, process.waitFor(), () -> "git " + String.join(" ", arguments) + ": " + output);
-    return output;
+    return repository.run(arguments);
   }
 }

@@ -16,6 +16,7 @@
 package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertLinesMatch;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
@@ -24,9 +25,12 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.regex.Pattern;
+import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** The PIT command line both plugins start PIT with. */
 class PitestRunTest {
@@ -61,31 +65,66 @@ class PitestRunTest {
     assertEquals("false", option(arguments(List.of()), "includeLaunchClasspath"));
   }
 
-  /**
-   * On Windows the Java launcher expands a bare {@code *} argument into the file names of the
-   * working directory, so a run with no test glob names every test with a pattern that is not a
-   * bare wildcard, which the launcher leaves alone unless a file named {@code ~.<something>} lies
-   * in the working directory.
-   */
   @Test
-  void aRunWithNoTestGlobNamesEveryTestWithoutABareWildcard() throws IOException {
-    String targetTests = option(arguments(List.of()), "targetTests");
-    assertEquals(PitestRun.ALL_TESTS, targetTests);
-    assertEquals(true, targetTests.startsWith("~"), "a regular expression to PIT: " + targetTests);
+  void aRunWithNoTestGlobNamesEveryTestByARegularExpression() throws IOException {
     assertEquals(
-        true,
-        Pattern.compile(targetTests.substring(1)).matcher("demo.CalcTest").matches(),
-        "matches a test class: " + targetTests);
+        "~.*",
+        option(arguments(List.of()), "targetTests"),
+        "targetTests with no glob given; the glob * is expanded into file names by the Java"
+            + " launcher on Windows");
   }
 
-  @Test
-  void anUnsetPluginsPropertyNamesNoPlugin() {
-    assertEquals(List.of(), PitestRun.plugins(null));
+  @ParameterizedTest
+  @NullAndEmptySource
+  @ValueSource(strings = {" , "})
+  void aPluginsPropertyWithNoCoordinateNamesNoPlugin(String property) {
+    assertEquals(List.of(), PitestRun.plugins(property));
   }
 
   @Test
   void thePluginsPropertyIsSplitAtCommasTrimmedAndStrippedOfBlanks() {
     assertEquals(List.of("a:b:1", "c:d:2"), PitestRun.plugins(" a:b:1 , ,c:d:2 "));
+  }
+
+  /** The source root holds no demo/math directory, so only the changed-lines file finds Calc.kt. */
+  @Test
+  void theReportQuotesAMutatedFileFromThePathTheChangedLinesFileNames() throws IOException {
+    File changedLines = directory.resolve("changed-lines.txt").toFile();
+    ChangedLinesFile.write(
+        changedLines.toPath(),
+        List.of("against origin/master (abc)"),
+        List.of(
+            new ChangedFile(
+                "src/main/kotlin/Calc.kt", "demo/math/Calc.kt", new TreeSet<>(List.of(3)))));
+    Path source = directory.resolve("src/main/kotlin/Calc.kt");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package demo.math\n\nfun two() = 2\n");
+    Path reportDir = directory.resolve("report");
+    Files.createDirectories(reportDir);
+    Files.writeString(
+        reportDir.resolve("mutants.tsv"),
+        "SURVIVED\tdemo.math.CalcKt\ttwo\tCalc.kt\t3\treplaced int return with 0"
+            + " for demo/math/CalcKt::two\n");
+
+    String report =
+        PitestRun.report(
+            changedLines,
+            reportDir.toFile(),
+            null,
+            directory.toFile(),
+            List.of(directory.resolve("src/main/kotlin").toFile()),
+            10,
+            10,
+            10,
+            false);
+
+    assertLinesMatch(
+        List.of(
+            ">> the header >>",
+            "  src/main/kotlin/Calc.kt",
+            "    3: fun two() = 2",
+            ">> the rest >>"),
+        report.lines().toList());
   }
 
   /** The file keeps a long classpath off a command line that Windows limits to 32767 characters. */

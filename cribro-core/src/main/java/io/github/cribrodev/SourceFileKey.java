@@ -93,11 +93,6 @@ public final class SourceFileKey {
     return of(declared.replace('.', '/'), path.substring(path.lastIndexOf('/') + 1));
   }
 
-  /** Returns {@link #declaredPackage(String, boolean)} for a Java source. */
-  static String declaredPackage(String text) {
-    return declaredPackage(text, false);
-  }
-
   /**
    * Returns the package a Java or Kotlin source declares, an empty string where it declares none,
    * or null where the text has no readable declaration, as with an unterminated comment, {@code

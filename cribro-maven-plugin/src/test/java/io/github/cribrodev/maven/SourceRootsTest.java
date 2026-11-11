@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.file.Files;
@@ -36,6 +35,8 @@ import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * A Kotlin module's sources lie where {@code kotlin-maven-plugin}'s {@code sourceDirs} say, which
@@ -156,6 +157,21 @@ class SourceRootsTest {
     }
 
     @Test
+    void thePluginAndAnExecutionOfTheGoalBothNameDirectories() throws Exception {
+      MavenProject project =
+          withKotlinPlugin(
+              module(),
+              "<configuration><sourceDirs><sourceDir>src/main/kotlin</sourceDir></sourceDirs></configuration>",
+              execution(
+                  "compile",
+                  "<configuration><sourceDirs><sourceDir>src/generated/kotlin</sourceDir></sourceDirs></configuration>"));
+
+      assertEquals(
+          List.of(absolute("src/main/kotlin"), absolute("src/generated/kotlin")),
+          SourceRoots.kotlinSourceDirs(project, "compile"));
+    }
+
+    @Test
     void aRelativeDirectoryIsTakenAgainstTheModule() throws Exception {
       MavenProject project =
           withKotlinPlugin(
@@ -166,12 +182,15 @@ class SourceRootsTest {
           List.of(absolute("src/main/kotlin")), SourceRoots.kotlinSourceDirs(project, "compile"));
     }
 
-    @Test
-    void aBlankEntryIsLeftOut() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"<sourceDir> </sourceDir>", "<sourceDir/>"})
+    void aBlankEntryIsLeftOut(String entry) throws Exception {
       MavenProject project =
           withKotlinPlugin(
               module(),
-              "<configuration><sourceDirs><sourceDir> </sourceDir><sourceDir>src/main/kotlin</sourceDir></sourceDirs></configuration>");
+              "<configuration><sourceDirs>"
+                  + entry
+                  + "<sourceDir>src/main/kotlin</sourceDir></sourceDirs></configuration>");
 
       assertEquals(
           List.of(absolute("src/main/kotlin")), SourceRoots.kotlinSourceDirs(project, "compile"));
@@ -201,6 +220,21 @@ class SourceRootsTest {
 
   @Nested
   class TheMainRoots {
+
+    @Test
+    void theKotlinSourceDirsAreRootsAfterTheCompileSourceRoots() throws Exception {
+      Files.createDirectories(repository.resolve("m/src/main/java"));
+      Files.createDirectories(repository.resolve("m/src/main/kotlin"));
+      MavenProject project =
+          withKotlinPlugin(
+              module(),
+              "<configuration><sourceDirs><sourceDir>src/main/kotlin</sourceDir></sourceDirs></configuration>");
+      project.addCompileSourceRoot(absolute("src/main/java"));
+
+      assertEquals(
+          List.of("m/src/main/java", "m/src/main/kotlin"),
+          SourceRoots.of(repository.toFile(), project));
+    }
 
     /** A Kotlin directory the POM names both as a compile root and as a sourceDir is one root. */
     @Test
@@ -271,18 +305,5 @@ class SourceRootsTest {
           List.of(absolute("src/test/java"), absolute("src/test/kotlin")),
           SourceRoots.testSourceDirs(project));
     }
-  }
-
-  /** The path a POM writes relative to the module resolves against that module's directory. */
-  @Test
-  void theModuleDirectoryIsTheBaseOfARelativePath() throws Exception {
-    MavenProject project =
-        withKotlinPlugin(
-            module(),
-            "<configuration><sourceDirs><sourceDir>kt</sourceDir></sourceDirs></configuration>");
-
-    assertEquals(
-        new File(project.getBasedir(), "kt").getAbsolutePath(),
-        SourceRoots.kotlinSourceDirs(project, "compile").get(0));
   }
 }

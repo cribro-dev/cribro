@@ -161,31 +161,35 @@ class MavenIntegrationTest {
   }
 
   /**
-   * A Kotlin module keeps its sources where kotlin-maven-plugin's {@code sourceDirs} say, and a
-   * Kotlin file may declare a package its directory does not follow; the changed file here lies
-   * at the root of {@code src/main/kotlin}. Its one test covers one branch of {@code max} and never
-   * calls {@code next}.
+   * The changed file lies at the root of {@code src/main/kotlin} and declares {@code demo.math}.
+   * Its one test covers one branch of {@code max} and never calls {@code next}.
    */
   @Test
-  void aKotlinModuleIsMeasuredByThePackageEachFileDeclares() throws Exception {
-    Path project = kotlinModule();
+  void aKotlinFileIsMeasuredByThePackageItDeclares() throws Exception {
+    Path project = kotlinModule("");
 
     String test = maven(project, 0, "test");
+
+    assertBefore(
+        test,
+        String.join(
+            "\n",
+            "  src/main/kotlin/Calc.kt",
+            "    2/4 changed lines executed, 1/2 branches covered",
+            "    uncovered changed code:",
+            "      4: 1 of 2 branches covered: if (a > b) {",
+            "      7: not executed: return b",
+            "      11: not executed: return a + 1"),
+        "BUILD SUCCESS");
+  }
+
+  @Test
+  void pitReportsTheMutantsOfAKotlinFileByThePackageItDeclares() throws Exception {
+    Path project = kotlinModule("");
+
     String pit = maven(project, 0, "test-compile", "cribro:pitest-diff");
 
     assertAll(
-        () ->
-            assertBefore(
-                test,
-                String.join(
-                    "\n",
-                    "  src/main/kotlin/Calc.kt",
-                    "    2/4 changed lines executed, 1/2 branches covered",
-                    "    uncovered changed code:",
-                    "      4: 1 of 2 branches covered: if (a > b) {",
-                    "      7: not executed: return b",
-                    "      11: not executed: return a + 1"),
-                "BUILD SUCCESS"),
         () -> assertContains(pit, "  src/main/kotlin/Calc.kt\n"),
         () -> assertContains(pit, "survived: changed conditional boundary, in max"),
         () ->
@@ -193,11 +197,56 @@ class MavenIntegrationTest {
                 pit, "no test reaches it: Replaced integer addition with subtraction, in next"));
   }
 
-  /** Writes a Kotlin module that loads cribro from .mvn/extensions.xml, with a change to Calc.kt. */
-  private Path kotlinModule() throws IOException, InterruptedException {
+  /** The execution never runs; Maven leaves the undefined property in its value as written. */
+  @Test
+  void aKotlinSourceDirMavenDidNotResolveIsNamedByTheCoverageReportAndByPit() throws Exception {
+    Path project =
+        kotlinModule(
+            String.join(
+                "\n",
+                "        <execution><id>generated</id><phase>none</phase><goals><goal>compile</goal></goals>",
+                "          <configuration><sourceDirs><sourceDir>${generated.kotlin}</sourceDir>",
+                "          </sourceDirs></configuration></execution>"));
+
+    String output = maven(project, 0, "test", "cribro:pitest-diff");
+
+    assertAll(
+        () ->
+            assertContains(
+                output, "Diff coverage: kotlin-maven-plugin sourceDir ${generated.kotlin} of kotlin"),
+        () ->
+            assertContains(
+                output, "[WARNING] kotlin-maven-plugin sourceDir ${generated.kotlin} of kotlin"));
+  }
+
+  /**
+   * The plugin does not exist, so the goal fails where it resolves PIT's classpath, naming the
+   * plugin; without the property the same goal succeeds on this module.
+   */
+  @Test
+  void pitResolvesThePluginsCribroPitestPluginsNames() throws Exception {
+    Path project = singleModule();
+
+    String pit =
+        maven(
+            project,
+            1,
+            "test-compile",
+            "cribro:pitest-diff",
+            "-Dcribro.pitestPlugins=demo:absent-pit-plugin:1.0");
+
+    assertContains(pit, "demo:absent-pit-plugin:jar:1.0");
+  }
+
+  /**
+   * Writes a Kotlin module that loads cribro from .mvn/extensions.xml, with a change to Calc.kt.
+   *
+   * @param executions further executions of kotlin-maven-plugin, written into its POM whole
+   */
+  private Path kotlinModule(String executions) throws IOException, InterruptedException {
     Path project = directory.resolve("kotlin");
     write(project.resolve(".mvn/extensions.xml"), extensionsXml());
-    write(project.resolve("pom.xml"), kotlinPom());
+    write(project.resolve("pom.xml"), kotlinPom(executions));
     write(project.resolve("src/main/kotlin/Calc.kt"), "package demo.math\n\nfun max(a: Int, b: Int): Int {\n    return a\n}\n");
     write(
         project.resolve("src/test/kotlin/demo/math/CalcTest.kt"),
@@ -236,7 +285,7 @@ class MavenIntegrationTest {
     return project;
   }
 
-  private static String kotlinPom() {
+  private static String kotlinPom(String executions) {
     return String.join(
         "\n",
         "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">",
@@ -264,6 +313,7 @@ class MavenIntegrationTest {
         "          <goals><goal>test-compile</goal></goals>",
         "          <configuration><sourceDirs><sourceDir>${project.basedir}/src/test/kotlin</sourceDir>",
         "          </sourceDirs></configuration></execution>",
+        executions,
         "      </executions></plugin>",
         "    <plugin><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin>",
         "  </plugins></build>",

@@ -28,6 +28,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.StringReader;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -262,7 +263,10 @@ class PitestDiffMojoTest {
     select(pit, null, new SurefireConfiguration(), new ArrayList<>());
 
     List<String> arguments = pit.arguments();
-    assertEquals(PitestRun.ALL_TESTS, arguments.get(arguments.indexOf("--targetTests") + 1));
+    assertEquals(
+        "~.*",
+        arguments.get(arguments.indexOf("--targetTests") + 1),
+        "--targetTests; PIT's regex form, as the Windows launcher expands a bare * into file names");
   }
 
   /** Surefire excludes a file in any directory, and PIT a class in any package. */
@@ -769,9 +773,32 @@ class PitestDiffMojoTest {
             .collect(Collectors.toList()));
   }
 
-  /** A module with Kotlin-only tests under kotlin-maven-plugin's test-compile sourceDir has tests. */
+  @ParameterizedTest
+  @CsvSource({
+    "src/test/java/TestedTest.java, dependent",
+    "src/test/java/TestedTest.kt, dependent",
+    "src/test/groovy/TestedTest.groovy, dependent tested"
+  })
+  void aReactorDependencyIsMutatedByItsDependentUnlessItsTestRootHoldsAJavaOrKotlinFile(
+      String testFile, String mutated) throws IOException {
+    MavenProject tested = module("tested");
+    Path test = testClasses.resolve("tested").resolve(testFile);
+    Files.createDirectories(test.getParent());
+    Files.createFile(test);
+    tested.addTestCompileSourceRoot(test.getParent().toString());
+    MavenProject dependent = module("dependent");
+    dependent.setArtifacts(new LinkedHashSet<>(List.of(demoArtifact("tested", null))));
+
+    assertEquals(
+        List.of(mutated.split(" ")),
+        PitestDiffMojo.mutatedProjects(dependent, List.of(tested, dependent)).stream()
+            .map(MavenProject::getArtifactId)
+            .collect(Collectors.toList()));
+  }
+
   @Test
-  void aReactorDependencyWithKotlinOnlyTestsIsNotMutatedByItsDependent() throws Exception {
+  void aReactorDependencyWhoseOnlyTestsAreInAKotlinSourceDirIsNotMutatedByItsDependent()
+      throws Exception {
     MavenProject tested = module("tested");
     Path test = testClasses.resolve("tested/src/test/kotlin/TestedTest.kt");
     Files.createDirectories(test.getParent());
@@ -785,7 +812,7 @@ class PitestDiffMojoTest {
     execution.setGoals(List.of("test-compile"));
     execution.setConfiguration(
         Xpp3DomBuilder.build(
-            new java.io.StringReader(
+            new StringReader(
                 "<configuration><sourceDirs><sourceDir>"
                     + test.getParent()
                     + "</sourceDir></sourceDirs></configuration>")));

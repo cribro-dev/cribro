@@ -17,6 +17,7 @@ package io.github.cribrodev;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -39,7 +40,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class KotlinBuildTest {
 
-  /** A stable Kotlin release whose Gradle plugin runs on the Gradle TestKit starts. */
+  /** A stable Kotlin release whose Gradle plugin runs on the Gradle version TestKit starts. */
   static final String KOTLIN_VERSION = "2.4.21";
 
   @TempDir Path build;
@@ -123,7 +124,7 @@ class KotlinBuildTest {
     Process process =
         new ProcessBuilder(command).directory(build.toFile()).redirectErrorStream(true).start();
     String output = new String(process.getInputStream().readAllBytes(), UTF_8);
-    assertTrue(process.waitFor() == 0, () -> String.join(" ", command) + "\n" + output);
+    assertEquals(0, process.waitFor(), () -> String.join(" ", command) + "\n" + output);
   }
 
   @Test
