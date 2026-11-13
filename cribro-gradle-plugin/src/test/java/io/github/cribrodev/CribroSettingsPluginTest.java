@@ -389,6 +389,122 @@ class CribroSettingsPluginTest {
             .orElse(result.getOutput()));
   }
 
+  /**
+   * {@code getByName} runs the task-configuration action of {@code :app} while its script runs, and
+   * resolving {@code testModulePath} there makes Gradle configure {@code :lib} inside that action,
+   * where it refuses {@code Project#afterEvaluate}.
+   */
+  @Test
+  void aProjectConfiguredFromATaskActionOfAnotherGetsTheOverrides() throws IOException {
+    Files.writeString(
+        build.resolve("settings.gradle"),
+        """
+        plugins {
+          id 'io.github.cribro-dev.cribro'
+        }
+        rootProject.name = 'sample'
+        include 'app', 'lib'
+        """,
+        UTF_8);
+    Files.createDirectories(build.resolve("app"));
+    Files.writeString(
+        build.resolve("app/build.gradle"),
+        """
+        plugins { id 'java' }
+        configurations { testModulePath }
+        dependencies { testModulePath project(':lib') }
+        tasks.withType(Test).configureEach {
+          jvmArgs "-Dtest.module.path=${configurations.testModulePath.asPath}"
+        }
+        tasks.getByName('test')
+        """,
+        UTF_8);
+    Files.createDirectories(build.resolve("lib"));
+    Files.writeString(
+        build.resolve("lib/build.gradle"),
+        """
+        plugins {
+          id 'java'
+          id 'jacoco'
+        }
+        test { jacoco { enabled = false } }
+        """
+            + PRINT_COVERAGE_WIRING,
+        UTF_8);
+
+    BuildResult result = run(null, ":lib:printCoverageWiring");
+
+    assertEquals(
+        List.of(
+            "jacoco on test: true",
+            "test finalized by: [:lib:jacocoTestReport]",
+            "jacocoTestReport finalized by: [:lib:diffCoverage]"),
+        result.getOutput().lines().toList());
+  }
+
+  @Test
+  void aProjectThatDisablesJacocoOnTestGetsTheOverrides() throws IOException {
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
+    Files.writeString(
+        build.resolve("app/build.gradle"),
+        """
+        plugins {
+          id 'java'
+          id 'jacoco'
+        }
+        test { jacoco { enabled = false } }
+        """
+            + PRINT_COVERAGE_WIRING,
+        UTF_8);
+
+    BuildResult result = run(null, ":app:printCoverageWiring");
+
+    assertEquals(
+        List.of(
+            "jacoco on test: true",
+            "test finalized by: [:app:jacocoTestReport]",
+            "jacocoTestReport finalized by: [:app:diffCoverage]"),
+        result.getOutput().lines().toList());
+  }
+
+  @Test
+  void aJavaPluginAppliedAfterTheScriptRanGetsTheOverrides() throws IOException {
+    writeBuild("  id 'io.github.cribro-dev.cribro'\n");
+    Files.writeString(
+        build.resolve("app/build.gradle"),
+        """
+        afterEvaluate { apply plugin: 'java' }
+        """
+            + PRINT_COVERAGE_WIRING,
+        UTF_8);
+
+    BuildResult result = run(null, ":app:printCoverageWiring");
+
+    assertEquals(
+        List.of(
+            "jacoco on test: true",
+            "test finalized by: [:app:jacocoTestReport]",
+            "jacocoTestReport finalized by: [:app:diffCoverage]"),
+        result.getOutput().lines().toList());
+  }
+
+  /**
+   * Registers {@code printCoverageWiring}, which prints whether JaCoCo instruments {@code test} and
+   * which tasks finalize {@code test} and {@code jacocoTestReport}.
+   */
+  private static final String PRINT_COVERAGE_WIRING =
+      """
+      tasks.register('printCoverageWiring') {
+        doLast {
+          def test = tasks.test
+          def report = tasks.jacocoTestReport
+          println "jacoco on test: ${test.jacoco.enabled}"
+          println "test finalized by: ${test.finalizedBy.getDependencies(test)*.path}"
+          println "jacocoTestReport finalized by: ${report.finalizedBy.getDependencies(report)*.path}"
+        }
+      }
+      """;
+
   /** Returns the lines between the version line and the guide, which describe the projects. */
   private static List<String> projectLines(BuildResult result) {
     return result.getOutput().lines()

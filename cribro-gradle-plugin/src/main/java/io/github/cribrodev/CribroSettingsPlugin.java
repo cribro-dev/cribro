@@ -68,6 +68,9 @@ public abstract class CribroSettingsPlugin implements Plugin<Settings> {
         .beforeProject(project -> project.getPluginManager().apply(CribroPlugin.class));
     settings
         .getGradle()
+        .afterProject(project -> project.getPlugins().getPlugin(CribroPlugin.class).projectEvaluated());
+    settings
+        .getGradle()
         .rootProject(
             root -> {
               root.getTasks()

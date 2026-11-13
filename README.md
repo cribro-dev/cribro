@@ -250,7 +250,9 @@ with the `java` plugin, it:
 
 - applies `jacoco`, enables it on the `test` task, and has `test` finalized by `jacocoTestReport` with the XML report,
   then by `diffCoverage`. These override the build's own settings after its scripts run, so a build that disables
-  JaCoCo still gets the report. Where the build does not apply `jacoco` itself, the other `Test` tasks run without it;
+  JaCoCo still gets the report. A setting made in an `afterEvaluate` action, or in a `gradle.afterProject` action
+  registered after cribro, runs after the overrides and wins. Where the build does not apply `jacoco` itself, the
+  other `Test` tasks run without it;
 - replaces the JaCoCo version only where it is Gradle's bundled default and older than 0.8.16;
 - registers `changedLines` and `pitestDiff`, and a `cribroPitest` configuration with `pitest-command-line`, plus
   `pitest-junit5-plugin` when `test` uses the JUnit Platform, plus `junit-platform-launcher` when the tests do not

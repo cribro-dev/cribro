@@ -83,6 +83,11 @@ public abstract class CribroPlugin implements Plugin<Project> {
 
   static final String JACOCO_VERSION = Versions.jacoco();
 
+  private final List<Runnable> pendingOverrides = new ArrayList<>();
+
+  /** Whether {@link #projectEvaluated()} has run. */
+  private boolean evaluated;
+
   static String version() {
     return Versions.cribro();
   }
@@ -117,24 +122,31 @@ public abstract class CribroPlugin implements Plugin<Project> {
                       project.provider(() -> project.getPlugins().hasPlugin(JavaPlugin.class)));
             });
     // The overrides of the build's own settings wait until its scripts have run, or a build that
-    // disables JaCoCo or its report for `test` would win. afterEvaluate is registered here: Gradle
-    // refuses it inside the callback that sees the java plugin applied.
-    List<Runnable> pending = new ArrayList<>();
+    // disables JaCoCo or its report for `test` would win.
     project
         .getPlugins()
         .withType(
             JavaPlugin.class,
             java -> {
               Runnable overrides = configure(project);
-              if (project.getState().getExecuted()) {
+              if (evaluated) {
                 overrides.run();
               } else {
-                pending.add(overrides);
+                pendingOverrides.add(overrides);
               }
             });
-    if (!project.getState().getExecuted()) {
-      project.afterEvaluate(p -> pending.forEach(Runnable::run));
-    }
+  }
+
+  /**
+   * Applies the overrides of the build's own settings, and applies them at once to a java plugin
+   * applied later. {@link CribroSettingsPlugin} calls it from {@code Gradle.afterProject}: Gradle
+   * refuses {@code Project#afterEvaluate} where it configures the project from inside a
+   * task-configuration action of another project.
+   */
+  void projectEvaluated() {
+    evaluated = true;
+    pendingOverrides.forEach(Runnable::run);
+    pendingOverrides.clear();
   }
 
   /** Registers the tasks and returns the overrides of the build's own settings. */
