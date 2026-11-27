@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.cribrodev.ChangedLinesFile;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 
@@ -56,6 +57,7 @@ class ChangedLinesFilterTest {
       new ChangedLinesFilter(
           Map.of("com/x/A.java", lines(10, 11), "B.java", lines(5)),
           Map.of("com/x/A.java", "src/com/x/A.java", "B.java", "src/B.java"),
+          List.of(),
           Path.of("unused"));
 
   private static NavigableSet<Integer> lines(Integer... numbers) {
@@ -154,6 +156,7 @@ class ChangedLinesFilterTest {
     new ChangedLinesFilter(
             Map.of("com/x/A.java", lines(10, 12, 13, 14, 15)),
             Map.of("com/x/A.java", "src/com/x/A.java"),
+            List.of(),
             withBytecode)
         .writeLinesWithBytecode(
             Stream.of(
@@ -181,11 +184,77 @@ class ChangedLinesFilterTest {
   void aClassInTheDefaultPackageRecordsItsLinesUnderItsFileName(@TempDir Path dir)
       throws IOException {
     Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
-    new ChangedLinesFilter(Map.of("B.java", lines(5)), Map.of("B.java", "src/B.java"), withBytecode)
+    new ChangedLinesFilter(
+            Map.of("B.java", lines(5)), Map.of("B.java", "src/B.java"), List.of(), withBytecode)
         .writeLinesWithBytecode(
             Stream.of(compiled("B", "B.java", method("m", Opcodes.ACC_PUBLIC, 5))));
 
     assertEquals(Map.of("B.java", lines(5)), ChangedLinesFile.read(withBytecode));
+  }
+
+  /** Writes a file under the directory and returns the directory. */
+  private static Path write(Path dir, String path, String text) throws IOException {
+    Path file = dir.resolve(path);
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, text);
+    return dir;
+  }
+
+  @Test
+  void aLineOfBracesAndElseIsLeftOutUnlessItStartsAMethod(@TempDir Path dir) throws IOException {
+    write(
+        dir,
+        "lib/src/main/java/com/x/A.java",
+        """
+        package com.x;
+        class A {
+          void f(boolean b) {
+            if (b) {
+              x();
+            } else {
+              y();
+            }
+          }
+          void g() {
+          }
+        }
+        """);
+    Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
+    new ChangedLinesFilter(
+            Map.of("com/x/A.java", lines(4, 5, 6, 7, 8, 9, 10, 11)),
+            Map.of("com/x/A.java", "lib/src/main/java/com/x/A.java"),
+            List.of(dir.resolve("other/src/main/java"), dir.resolve("lib/src/main/java")),
+            withBytecode)
+        .writeLinesWithBytecode(
+            Stream.of(
+                compiled(
+                    "com/x/A",
+                    "A.java",
+                    method("f", Opcodes.ACC_PUBLIC, 4, 5, 6, 7, 9),
+                    method("g", Opcodes.ACC_PUBLIC, 11))));
+
+    assertEquals(Map.of("com/x/A.java", lines(4, 5, 7, 11)), ChangedLinesFile.read(withBytecode));
+  }
+
+  /**
+   * The root under {@code other} holds a file of the same name whose line 4 holds code, so reading
+   * it would keep line 4.
+   */
+  @Test
+  void theTextIsReadFromTheChangedFileWhereverItsDirectoryIs(@TempDir Path dir)
+      throws IOException {
+    write(dir, "other/src/main/kotlin/A.kt", "package com.x\nfun f() {\n  x()\n  y()\n");
+    write(dir, "lib/src/main/kotlin/A.kt", "package com.x\nfun f() {\n  x()\n}\n");
+    Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
+    new ChangedLinesFilter(
+            Map.of("com/x/A.kt", lines(3, 4)),
+            Map.of("com/x/A.kt", "lib/src/main/kotlin/A.kt"),
+            List.of(dir.resolve("other/src/main/kotlin"), dir.resolve("lib/src/main/kotlin")),
+            withBytecode)
+        .writeLinesWithBytecode(
+            Stream.of(compiled("com/x/AKt", "A.kt", method("f", Opcodes.ACC_PUBLIC, 3, 4))));
+
+    assertEquals(Map.of("com/x/A.kt", lines(3)), ChangedLinesFile.read(withBytecode));
   }
 
   @Test
@@ -195,6 +264,7 @@ class ChangedLinesFilterTest {
     new ChangedLinesFilter(
             Map.of("com/x/A.java", lines(3)),
             Map.of("com/x/A.java", "src/com/x/A.java"),
+            List.of(),
             withBytecode)
         .writeLinesWithBytecode(
             Stream.of(compiled("com/x/A", "A.java", method("m", Opcodes.ACC_PUBLIC, 4))));

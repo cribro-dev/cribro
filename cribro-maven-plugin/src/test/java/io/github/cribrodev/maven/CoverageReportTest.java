@@ -29,12 +29,15 @@ import java.util.stream.Collectors;
 import io.github.cribrodev.JacocoLines;
 import org.apache.maven.project.MavenProject;
 import org.jacoco.core.analysis.ICounter;
+import org.jacoco.core.analysis.ISourceNode;
 import org.jacoco.core.data.ExecutionData;
 import org.jacoco.core.data.ExecutionDataStore;
 import org.jacoco.core.data.ExecutionDataWriter;
 import org.jacoco.core.data.SessionInfo;
 import org.jacoco.core.internal.analysis.BundleCoverageImpl;
+import org.jacoco.core.internal.analysis.ClassCoverageImpl;
 import org.jacoco.core.internal.analysis.CounterImpl;
+import org.jacoco.core.internal.analysis.MethodCoverageImpl;
 import org.jacoco.core.internal.analysis.PackageCoverageImpl;
 import org.jacoco.core.internal.analysis.SourceFileCoverageImpl;
 import org.junit.jupiter.api.Test;
@@ -127,6 +130,26 @@ class CoverageReportTest {
             .build(),
         CoverageReport.lines(new BundleCoverageImpl("bundle", List.of(packageCoverage))));
     assertEquals(ICounter.EMPTY, sample.getLine(4).getStatus(), "status of line 4");
+  }
+
+  /** A method compiled without line numbers has no first line, and the XML report gives none. */
+  @Test
+  void theFirstLineOfEachMethodIsRecordedAgainstTheSourceFileOfItsClass() {
+    MethodCoverageImpl noop = new MethodCoverageImpl("noop", "()V", null);
+    noop.increment(CounterImpl.getInstance(1, 0), CounterImpl.COUNTER_0_0, 7);
+    MethodCoverageImpl withoutLines = new MethodCoverageImpl("generated", "()V", null);
+    withoutLines.increment(
+        CounterImpl.getInstance(1, 0), CounterImpl.COUNTER_0_0, ISourceNode.UNKNOWN_LINE);
+    ClassCoverageImpl sample = new ClassCoverageImpl("com/example/Sample", 0, false);
+    sample.setSourceFileName("Sample.java");
+    sample.addMethod(noop);
+    sample.addMethod(withoutLines);
+    PackageCoverageImpl packageCoverage =
+        new PackageCoverageImpl("com/example", List.of(sample), List.of());
+
+    assertEquals(
+        new JacocoLines.Builder().method("com/example/Sample.java", 7).build(),
+        CoverageReport.lines(new BundleCoverageImpl("bundle", List.of(packageCoverage))));
   }
 
   /** JaCoCo names the default package with an empty string. */

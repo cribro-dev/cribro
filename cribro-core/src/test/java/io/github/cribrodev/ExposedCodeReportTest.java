@@ -194,6 +194,73 @@ class ExposedCodeReportTest {
   }
 
   @Test
+  void aBraceLineIsNeitherARowNorCountedUnlessItIsTheBodyOfAnEmptyLambda() throws IOException {
+    write(
+        SAMPLE,
+        """
+        package p;
+        class Sample {
+          int run(int x) {
+            if (x > 0) {
+              x++;
+              later(() -> {
+              });
+            } else {
+              x--;
+            }
+            while (x > 9) {
+              x--;
+            }
+            return x;
+          }
+          void later(Runnable r) {}
+        }
+        """);
+    Path xml = directory.resolve("jacoco.xml");
+    Files.writeString(
+        xml,
+        "<report name=\"test\"><package name=\"p\">"
+            + "<class name=\"p/Sample\" sourcefilename=\"Sample.java\">"
+            + "<method name=\"run\" desc=\"(I)I\" line=\"4\"/>"
+            + "<method name=\"lambda$run$0\" desc=\"()V\" line=\"7\"/>"
+            + "</class><sourcefile name=\"Sample.java\">"
+            + line(4, 4, 1, 1)
+            + line(5, 0, 0, 0)
+            + line(6, 0, 0, 0)
+            + line(7, 0, 0, 0)
+            + line(8, 0, 0, 0)
+            + line(9, 2, 0, 0)
+            + line(11, 4, 1, 1)
+            + line(12, 0, 0, 0)
+            + line(13, 0, 0, 0)
+            + line(14, 2, 0, 0)
+            + "</sourcefile></package></report>");
+    ExposedCode exposed =
+        ExposedCode.find(
+            directory.toFile(), Map.of(SAMPLE, new TreeSet<>(List.of(4, 11))), List.of(ROOT));
+
+    assertLinesMatch(
+        List.of(
+            ">> header >>",
+            "  " + SAMPLE,
+            "    run\\S* lines 5-13, reached through the conditions changed at lines 4, 11",
+            "      1/5 lines executed",
+            "      5: not executed: x++;",
+            "      6: not executed: later(() -> {",
+            "      7: not executed: });",
+            "      12: not executed: x--;",
+            ">> tail >>"),
+        ExposedCodeReport.measure(
+                exposed,
+                Map.of(SAMPLE, "p/Sample.java"),
+                JacocoLines.read(List.of(xml.toFile())),
+                SourceLines.under(directory.toFile()))
+            .render(":lib:test", false, tests -> "", Limits.NONE)
+            .lines()
+            .toList());
+  }
+
+  @Test
   void consecutiveLinesPrintAsARange() {
     assertEquals(
         "4, 7-9, 12-13",

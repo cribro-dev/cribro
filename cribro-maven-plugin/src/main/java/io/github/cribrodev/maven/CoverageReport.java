@@ -47,8 +47,10 @@ import org.jacoco.core.analysis.IBundleCoverage;
 import org.jacoco.core.analysis.IClassCoverage;
 import org.jacoco.core.analysis.ICounter;
 import org.jacoco.core.analysis.ILine;
+import org.jacoco.core.analysis.IMethodCoverage;
 import org.jacoco.core.analysis.IPackageCoverage;
 import org.jacoco.core.analysis.ISourceFileCoverage;
+import org.jacoco.core.analysis.ISourceNode;
 import org.jacoco.core.data.ExecutionDataReader;
 import org.jacoco.core.data.ExecutionDataStore;
 import org.jacoco.core.data.SessionInfo;
@@ -338,10 +340,26 @@ final class CoverageReport {
     return lines(bundle);
   }
 
-  /** Returns the counters of every line the XML report of the bundle lists. */
+  /**
+   * Returns the counters of every line, and the first line of every method, that the XML report of
+   * the bundle lists.
+   */
   static JacocoLines lines(IBundleCoverage bundle) {
     JacocoLines.Builder lines = new JacocoLines.Builder();
     for (IPackageCoverage packageCoverage : bundle.getPackages()) {
+      for (IClassCoverage classCoverage : packageCoverage.getClasses()) {
+        if (classCoverage.getSourceFileName() == null) {
+          continue;
+        }
+        String key =
+            SourceFileKey.of(packageCoverage.getName(), classCoverage.getSourceFileName());
+        for (IMethodCoverage method : classCoverage.getMethods()) {
+          // The XML report leaves out the line of a method compiled without line numbers.
+          if (method.getFirstLine() != ISourceNode.UNKNOWN_LINE) {
+            lines.method(key, method.getFirstLine());
+          }
+        }
+      }
       for (ISourceFileCoverage sourceFile : packageCoverage.getSourceFiles()) {
         String key = SourceFileKey.of(packageCoverage.getName(), sourceFile.getName());
         lines.sourceFile(key);

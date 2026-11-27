@@ -224,8 +224,9 @@ public final class PitestSurvivors {
    * @param paths the repository-relative path of each changed file, keyed by {@link
    *     SourceFileKey}, as the {@link ChangedLinesFile} of the run records them; a Kotlin file may
    *     lie in a directory that does not follow its package, so its key alone finds no file
-   * @param linesWithBytecode the changed lines with bytecode, keyed by {@link SourceFileKey}, as
-   *     the run records them in the file {@link ChangedLinesFile#WITH_BYTECODE} names, or null
+   * @param linesWithBytecode the changed lines with bytecode that hold code, as {@link
+   *     CodeLines#holdsCode} decides, keyed by {@link SourceFileKey}, as the run records them in
+   *     the file {@link ChangedLinesFile#WITH_BYTECODE} names, or null
    *     where the run wrote no such file; the report then counts the lines that carry a mutant
    *     and gives no total
    */

@@ -31,6 +31,13 @@ module in the build, so `-am` matters when the tests live in a module of their o
 `target/cribro/diff-coverage.txt` of each module whose main sources the change touched, which can be a module other than
 `<module>`.
 
+A changed line that holds only braces, closing parentheses, semicolons, commas, and `else`, such as `}`, `} else {`, or
+`});`, counts towards no total and is not listed. The instruction the compiler puts on such a line belongs to the
+statement it closes, and the lines and branches of that statement show whether it ran. Two kinds of such line are still
+measured: the closing brace of a method or a lambda with an empty body, which holds its only instruction, and a line
+that carries a branch. The block that follows the total leaves out the same lines. The mutation testing report leaves
+them out of its count of changed lines too, and counts such a line where a mutant is on it.
+
 If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It stays
 counted as uncovered and leaves the list of work.
 

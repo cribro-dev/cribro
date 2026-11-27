@@ -94,7 +94,10 @@ final class DiffCoverageReport {
   static final class FileCoverage {
     final String path;
 
-    /** Changed lines of this file that emit bytecode, executed or not. */
+    /**
+     * Changed lines of this file that emit bytecode and hold code, as {@link CodeLines#holdsCode}
+     * decides, executed or not.
+     */
     int executableLines;
 
     /** Changed lines of this file the run executed. */
@@ -185,7 +188,10 @@ final class DiffCoverageReport {
     }
   }
 
-  /** The total printed where the change reached no line of this module that emits bytecode. */
+  /**
+   * The total printed where no changed line of this module both emits bytecode and holds code, as
+   * {@link CodeLines#holdsCode} decides.
+   */
   static final String NO_EXECUTABLE_LINES =
       "Total: no changed executable lines under this module's source roots.";
 
@@ -194,7 +200,10 @@ final class DiffCoverageReport {
   /** Changed files under a source root that no report read here mentions. */
   final List<String> notInAnyReport = new ArrayList<>();
 
-  /** Changed files whose changed lines emit no bytecode, such as comments and declarations. */
+  /**
+   * Changed files whose changed lines emit no bytecode, such as comments and declarations, or hold
+   * no code of their own, such as a closing brace.
+   */
   final List<String> nothingExecutable = new ArrayList<>();
 
   /**
@@ -240,6 +249,10 @@ final class DiffCoverageReport {
    * source file and gives no way to tell them apart. Each path is still printed, so that neither
    * changed file leaves the report.
    *
+   * <p>A line that holds no code of its own, as {@link CodeLines#holdsCode} decides from its
+   * branches, from whether JaCoCo reports it as the first line of a method, and from its text,
+   * counts towards no total and is not a row.
+   *
    * @param changed the files in the order the lists that name nothing to do print them, which
    *     {@link ChangedLines#underSourceRoots} orders by path
    * @param sources the working tree the uncovered lines are quoted from
@@ -260,6 +273,11 @@ final class DiffCoverageReport {
         if (counters == null) {
           continue;
         }
+        String source = sources.get(path, number);
+        if (!CodeLines.holdsCode(
+            counters.totalBranches > 0, lines.startsMethod(key, number), source)) {
+          continue;
+        }
         file.executableLines++;
         if (counters.isExecuted()) {
           file.executedLines++;
@@ -269,7 +287,6 @@ final class DiffCoverageReport {
         if (counters.isExecuted() && !counters.hasUntakenBranch()) {
           continue;
         }
-        String source = sources.get(path, number);
         AffectedLine affected =
             new AffectedLine(
                 number,

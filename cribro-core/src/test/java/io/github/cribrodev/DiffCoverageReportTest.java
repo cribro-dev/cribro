@@ -76,10 +76,21 @@ class DiffCoverageReportTest {
 
   /** Reads a report holding the given {@code <line>} elements for Sample.java. */
   private JacocoLines report(String lines) throws IOException {
+    return report("", lines);
+  }
+
+  /**
+   * Reads a report holding the given {@code <method>} elements of a class compiled from
+   * Sample.java, and the given {@code <line>} elements of Sample.java.
+   */
+  private JacocoLines report(String methods, String lines) throws IOException {
     Path file = directory.resolve("jacocoTestReport.xml");
     Files.writeString(
         file,
         "<report name=\"test\"><package name=\"com/uber/nullaway\">"
+            + "<class name=\"com/uber/nullaway/Sample\" sourcefilename=\"Sample.java\">"
+            + methods
+            + "</class>"
             + "<sourcefile name=\"Sample.java\">"
             + lines
             + "</sourcefile></package></report>");
@@ -241,6 +252,96 @@ class DiffCoverageReportTest {
       DiffCoverageReport result =
           measure(List.of(changed(OTHER, 10), changed(SAMPLE, 10)), report(line(10, 0, 0, 0)));
       assertEquals(List.of(SAMPLE), result.measuredPaths());
+    }
+  }
+
+  @Nested
+  class LinesThatHoldNoCode {
+
+    @Test
+    void aBraceIsNeitherARowNorCountedInTheTotals() throws IOException {
+      writeSource("Sample.java", "if (a) {", "  x();", "} else {", "  y();", "}");
+      DiffCoverageReport result =
+          measure(
+              List.of(changed(SAMPLE, 1, 2, 3, 4, 5)),
+              report(
+                  line(1, 4, 1, 1)
+                      + line(2, 0, 0, 0)
+                      + line(3, 0, 0, 0)
+                      + line(4, 4, 0, 0)
+                      + line(5, 4, 0, 0)));
+      assertLinesMatch(
+          List.of(
+              "Diff coverage " + SCOPE,
+              "  ordered by uncovered changed lines, then uncovered branches",
+              "",
+              "  " + SAMPLE,
+              "    2/3 changed lines executed, 1/2 branches covered",
+              "    uncovered changed code:",
+              "      1: 1 of 2 branches covered: if (a) {",
+              "      2: not executed: x();",
+              "",
+              "Total: 2/3 changed lines executed, 1/2 branches covered.",
+              "Uncovered changed code: 2 lines"),
+          result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
+    }
+
+    @Test
+    void theClosingBraceOfAMethodWithAnEmptyBodyIsMeasured() throws IOException {
+      writeSource("Sample.java", "void noop() {", "}", "void run() {", "  x();", "}");
+      DiffCoverageReport result =
+          measure(
+              List.of(changed(SAMPLE, 1, 2, 3, 4, 5)),
+              report(
+                  "<method name=\"noop\" desc=\"()V\" line=\"2\"/>"
+                      + "<method name=\"run\" desc=\"()V\" line=\"4\"/>",
+                  line(2, 0, 0, 0) + line(4, 0, 0, 0) + line(5, 0, 0, 0)));
+      assertLinesMatch(
+          List.of(
+              "Diff coverage " + SCOPE,
+              "  ordered by uncovered changed lines, then uncovered branches",
+              "",
+              "  " + SAMPLE,
+              "    0/2 changed lines executed",
+              "    uncovered changed code:",
+              "      2: not executed: }",
+              "      4: not executed: x();",
+              "",
+              "Total: 0/2 changed lines executed.",
+              "Uncovered changed code: 2 lines"),
+          result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
+    }
+
+    @Test
+    void aBraceThatCarriesABranchIsMeasuredLikeAnyLine() throws IOException {
+      writeSource("Sample.java", "}");
+      String rendered =
+          measure(List.of(changed(SAMPLE, 1)), report(line(1, 4, 1, 1)))
+              .render(SCOPE, false, List.of(), Limits.NONE);
+      assertAll(
+          () ->
+              assertEquals(
+                  List.of("      1: 1 of 2 branches covered: }"), rows(rendered), "rows"),
+          () ->
+              assertEquals(
+                  "Total: 1/1 changed lines executed, 1/2 branches covered.",
+                  onlyLineStartingWith(rendered, "Total: ")));
+    }
+
+    @Test
+    void aFileWhoseChangedLinesAreAllBracesHasNoExecutableChangedLines() throws IOException {
+      writeSource("Sample.java", "}", "} else {");
+      DiffCoverageReport result =
+          measure(List.of(changed(SAMPLE, 1, 2)), report(line(1, 0, 0, 0) + line(2, 4, 0, 0)));
+      assertLinesMatch(
+          List.of(
+              "Diff coverage " + SCOPE,
+              "",
+              "  Changed files with no executable changed lines:",
+              "    " + SAMPLE,
+              "",
+              DiffCoverageReport.NO_EXECUTABLE_LINES),
+          result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
     }
   }
 
