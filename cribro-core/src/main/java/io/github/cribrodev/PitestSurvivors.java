@@ -36,7 +36,8 @@ import java.util.stream.Collectors;
  *
  * <p>A mutant is live when its status is {@code SURVIVED} or {@code NO_COVERAGE}: the tests that
  * reached its line passed anyway, or no test reached it. {@code KILLED}, {@code TIMED_OUT}, and
- * {@code MEMORY_ERROR} mean the tests noticed the mutant and are counted as killed. Any other
+ * {@code MEMORY_ERROR} mean the tests noticed the mutant and are counted as killed, and the count
+ * names how many of them timed out or ran out of memory. Any other
  * status, such as {@code NON_VIABLE} for a mutant the JVM would not load, says nothing about the
  * tests and is counted under its own name.
  *
@@ -400,21 +401,41 @@ public final class PitestSurvivors {
     return out.toString();
   }
 
-  /** The statuses that mean a test noticed the mutant. */
-  private static final Set<String> KILLED = Set.of("KILLED", "TIMED_OUT", "MEMORY_ERROR");
+  /**
+   * The statuses that mean a test noticed the mutant, each with the words that name its share of
+   * the killed count, or null for {@code KILLED}, whose share is the rest.
+   */
+  private static final Map<String, String> KILLED = killedStatuses();
 
-  /** Returns the status counts, killed first, in the words the report uses. */
+  private static Map<String, String> killedStatuses() {
+    Map<String, String> statuses = new LinkedHashMap<>();
+    statuses.put("KILLED", null);
+    statuses.put("TIMED_OUT", "timed out");
+    statuses.put("MEMORY_ERROR", "out of memory");
+    return statuses;
+  }
+
+  /**
+   * Returns the status counts, killed first, in the words the report uses. The killed count names
+   * how many of its mutants timed out or ran out of memory, where any did.
+   */
   private String counts() {
     int killed = 0;
-    for (String status : KILLED) {
-      killed += statusCounts.getOrDefault(status, 0);
+    List<String> shares = new ArrayList<>();
+    for (Map.Entry<String, String> status : KILLED.entrySet()) {
+      int count = statusCounts.getOrDefault(status.getKey(), 0);
+      killed += count;
+      if (status.getValue() != null && count > 0) {
+        shares.add(count + " " + status.getValue());
+      }
     }
     List<String> parts = new ArrayList<>();
-    parts.add(killed + " killed");
+    parts.add(
+        killed + " killed" + (shares.isEmpty() ? "" : " (" + String.join(", ", shares) + ")"));
     parts.add(statusCounts.getOrDefault("SURVIVED", 0) + " survived");
     parts.add(statusCounts.getOrDefault("NO_COVERAGE", 0) + " not reached by any test");
     for (Map.Entry<String, Integer> entry : statusCounts.entrySet()) {
-      if (!isLive(entry.getKey()) && !KILLED.contains(entry.getKey())) {
+      if (!isLive(entry.getKey()) && !KILLED.containsKey(entry.getKey())) {
         parts.add(entry.getValue() + " " + entry.getKey());
       }
     }

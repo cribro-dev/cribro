@@ -190,11 +190,26 @@ class PitestSurvivorsTest {
   void aTimeoutCountsAsKilledAndANonViableMutantIsCountedApart() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  3 mutants: 2 killed, 0 survived, 0 not reached by any test, 1 NON_VIABLE",
+            + "  3 mutants: 2 killed (1 timed out), 0 survived, 0 not reached by any test,"
+            + " 1 NON_VIABLE",
         run(
                 mutation("KILLED", "A", "A.java", 1, "removed call"),
                 mutation("TIMED_OUT", "A", "A.java", 2, "negated conditional"),
                 mutation("NON_VIABLE", "A", "A.java", 3, "negated conditional"))
+            .render(DiffCoverageReport.Limits.NONE, List.of()));
+  }
+
+  @Test
+  void theKilledCountNamesTheTimeoutsAndTheMemoryErrorsAmongIt() throws IOException {
+    assertEquals(
+        "Mutation testing of changed lines against origin/master (abc), all tests\n"
+            + "  4 mutants: 4 killed (2 timed out, 1 out of memory), 0 survived,"
+            + " 0 not reached by any test",
+        run(
+                mutation("MEMORY_ERROR", "A", "A.java", 1, "removed call"),
+                mutation("TIMED_OUT", "A", "A.java", 2, "negated conditional"),
+                mutation("KILLED", "A", "A.java", 3, "negated conditional"),
+                mutation("TIMED_OUT", "A", "A.java", 4, "negated conditional"))
             .render(DiffCoverageReport.Limits.NONE, List.of()));
   }
 
