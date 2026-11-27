@@ -316,13 +316,17 @@ public final class PitestRun {
       throws IOException {
     String header = ChangedLinesFile.readHeader(changedLines.toPath());
     String tests = targetTests != null ? "tests matching " + targetTests : "all tests";
+    // PIT before 1.11, which cribro.pitestVersion can select, never calls the interceptor method
+    // that writes this file.
+    File withBytecode = new File(reportDir, ChangedLinesFile.WITH_BYTECODE);
     PitestSurvivors report =
         PitestSurvivors.read(
             (header == null ? "against an unknown base" : header) + ", " + tests,
             new File(reportDir, MutantsFile.NAME),
             repository,
             sourceDirs,
-            ChangedLinesFile.readPaths(changedLines.toPath()));
+            ChangedLinesFile.readPaths(changedLines.toPath()),
+            withBytecode.isFile() ? ChangedLinesFile.read(withBytecode.toPath()) : null);
     return report.writeAndRender(
         repository,
         new File(reportDir, "survivors.txt"),

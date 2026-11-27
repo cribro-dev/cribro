@@ -55,6 +55,13 @@ public final class ChangedLinesFile {
    */
   public static final String PITEST_PROPERTY = "cribro.pitest.changedLines";
 
+  /**
+   * The name of the file, in PIT's report directory, that holds the changed lines of the run with
+   * bytecode in a class PIT may mutate. The PIT interceptor writes it in this class's format, and
+   * the mutation report counts the changed lines from it.
+   */
+  public static final String WITH_BYTECODE = "changed-lines-with-bytecode.txt";
+
   private ChangedLinesFile() {}
 
   /**

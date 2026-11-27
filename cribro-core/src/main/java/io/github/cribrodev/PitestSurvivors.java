@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -172,18 +173,29 @@ public final class PitestSurvivors {
   private final Comparator<String> testOrder;
   private final Map<String, Integer> statusCounts;
   private final int total;
+  private final int mutatedLines;
+  private final int linesWithBytecode;
   private final List<FileMutants> files;
 
+  /**
+   * @param mutatedLines the number of changed lines that carry at least one mutant
+   * @param linesWithBytecode the number of changed lines with bytecode, or -1 where the run did not
+   *     record them
+   */
   private PitestSurvivors(
       String scope,
       Comparator<String> testOrder,
       Map<String, Integer> statusCounts,
       int total,
+      int mutatedLines,
+      int linesWithBytecode,
       List<FileMutants> files) {
     this.scope = scope;
     this.testOrder = testOrder;
     this.statusCounts = statusCounts;
     this.total = total;
+    this.mutatedLines = mutatedLines;
+    this.linesWithBytecode = linesWithBytecode;
     this.files = files;
   }
 
@@ -199,19 +211,36 @@ public final class PitestSurvivors {
    * @param paths the repository-relative path of each changed file, keyed by {@link
    *     SourceFileKey}, as the {@link ChangedLinesFile} of the run records them; a Kotlin file may
    *     lie in a directory that does not follow its package, so its key alone finds no file
+   * @param linesWithBytecode the changed lines with bytecode, keyed by {@link SourceFileKey}, as
+   *     the run records them in the file {@link ChangedLinesFile#WITH_BYTECODE} names, or null
+   *     where the run wrote no such file; the report then counts the lines that carry a mutant
+   *     and gives no total
    */
   public static PitestSurvivors read(
       String scope,
       File mutantsFile,
       File repository,
       List<File> sourceRoots,
-      Map<String, String> paths)
+      Map<String, String> paths,
+      Map<String, ? extends Set<Integer>> linesWithBytecode)
       throws IOException {
+    Set<String> withBytecode = new HashSet<>();
+    if (linesWithBytecode != null) {
+      linesWithBytecode.forEach(
+          (key, lines) -> lines.forEach(line -> withBytecode.add(key + ":" + line)));
+    }
     if (!mutantsFile.isFile()) {
       return new PitestSurvivors(
-          scope, Comparator.naturalOrder(), new LinkedHashMap<>(), 0, new ArrayList<>());
+          scope,
+          Comparator.naturalOrder(),
+          new LinkedHashMap<>(),
+          0,
+          0,
+          linesWithBytecode == null ? -1 : withBytecode.size(),
+          new ArrayList<>());
     }
     List<MutantsFile.Mutant> reported = MutantsFile.read(mutantsFile.toPath());
+    Set<String> mutated = new HashSet<>();
     Map<String, Integer> statusCounts = new LinkedHashMap<>();
     Map<String, TreeMap<Integer, List<Mutant>>> byFile = new HashMap<>();
     // Every mutant of a line names the tests that reach the line, so the same test names repeat
@@ -219,6 +248,12 @@ public final class PitestSurvivors {
     Map<String, String> shortTestNames = new HashMap<>();
     for (MutantsFile.Mutant mutant : reported) {
       statusCounts.merge(mutant.status(), 1, Integer::sum);
+      int packageEnd = mutant.mutatedClass().lastIndexOf('.');
+      String relative =
+          SourceFileKey.of(
+              packageEnd < 0 ? "" : mutant.mutatedClass().substring(0, packageEnd).replace('.', '/'),
+              mutant.sourceFile());
+      mutated.add(relative + ":" + mutant.lineNumber());
       if (!isLive(mutant.status())) {
         continue;
       }
@@ -228,11 +263,6 @@ public final class PitestSurvivors {
               test ->
                   tests.add(
                       shortTestNames.computeIfAbsent(test, PitestSurvivors::shortTestName)));
-      int packageEnd = mutant.mutatedClass().lastIndexOf('.');
-      String relative =
-          SourceFileKey.of(
-              packageEnd < 0 ? "" : mutant.mutatedClass().substring(0, packageEnd).replace('.', '/'),
-              mutant.sourceFile());
       String description =
           (mutant.status().equals("NO_COVERAGE") ? "no test reaches it: " : "survived: ")
               + DESCRIPTION_SUFFIX.matcher(mutant.description()).replaceFirst("");
@@ -283,7 +313,17 @@ public final class PitestSurvivors {
         Comparator.<String>comparingInt(test -> liveMutantsReached.getOrDefault(test, 0))
             .reversed()
             .thenComparing(Comparator.naturalOrder());
-    return new PitestSurvivors(scope, testOrder, statusCounts, reported.size(), files);
+    // A line that carries a mutant has bytecode, so the total counts it whether the run recorded
+    // the line or not.
+    withBytecode.addAll(mutated);
+    return new PitestSurvivors(
+        scope,
+        testOrder,
+        statusCounts,
+        reported.size(),
+        mutated.size(),
+        linesWithBytecode == null ? -1 : withBytecode.size(),
+        files);
   }
 
   /**
@@ -339,9 +379,29 @@ public final class PitestSurvivors {
     StringBuilder out = new StringBuilder();
     out.append("Mutation testing of changed lines ").append(scope).append('\n');
     if (total == 0) {
-      out.append("  no mutant: PIT generated none on the changed lines");
+      out.append("  no mutant: ");
+      if (linesWithBytecode < 0) {
+        out.append("PIT generated none on the changed lines");
+      } else if (linesWithBytecode == 0) {
+        out.append("no changed line has bytecode PIT may mutate");
+      } else {
+        out.append("PIT generated none on the ")
+            .append(linesWithBytecode)
+            .append(' ')
+            .append(changedLines(linesWithBytecode));
+      }
     } else {
-      out.append("  ").append(total).append(total == 1 ? " mutant: " : " mutants: ").append(counts());
+      out.append("  ")
+          .append(total)
+          .append(total == 1 ? " mutant on " : " mutants on ")
+          .append(mutatedLines);
+      if (linesWithBytecode >= 0) {
+        out.append(" of ").append(linesWithBytecode);
+      }
+      out.append(' ')
+          .append(changedLines(linesWithBytecode >= 0 ? linesWithBytecode : mutatedLines))
+          .append(": ")
+          .append(counts());
     }
     int liveLines = files.stream().mapToInt(file -> file.lines().size()).sum();
     if (liveLines > 0) {
@@ -389,7 +449,12 @@ public final class PitestSurvivors {
           .append("\n\n")
           .append(WHAT_TO_DO);
     }
-    if (liveLines > 0 || total == 0) {
+    // The note explains a changed line with no mutant. Where the run did not record the lines with
+    // bytecode, any changed line may lack one, so the note goes only with a report that already
+    // asks the reader to act: a mutant survived, or none was generated.
+    boolean unmutatedLine =
+        linesWithBytecode < 0 ? liveLines > 0 || total == 0 : mutatedLines < linesWithBytecode;
+    if (unmutatedLine) {
       out.append("\n\n").append(AVOIDED_CALLS);
     }
     if (!fullReportPaths.isEmpty()) {
@@ -399,6 +464,11 @@ public final class PitestSurvivors {
       }
     }
     return out.toString();
+  }
+
+  /** Returns the noun that follows a count of changed lines. */
+  private static String changedLines(int count) {
+    return count == 1 ? "changed line" : "changed lines";
   }
 
   /**

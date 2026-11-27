@@ -146,6 +146,8 @@ class KotlinBuildTest {
         () -> assertContains(output, "      4: 1 of 2 branches covered: if (a > b) {"),
         () -> assertContains(output, "      7: not executed: return b"),
         () -> assertContains(output, "      11: not executed: return a + 1"),
+        // The coverage report above counts the same 4 changed lines with bytecode.
+        () -> assertContains(output, " of 4 changed lines: "),
         () -> assertContains(output, "survived: changed conditional boundary, in max"),
         () -> assertContains(output, "no test reaches it: Replaced integer addition with subtraction, in next"));
   }

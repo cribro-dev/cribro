@@ -65,6 +65,9 @@ survives marks a changed line whose behavior no test asserts. For each live muta
 - no caller can observe the difference: the mutant is equivalent, so say so in the pull request;
 - you cannot tell: report it as unresolved.
 
+The report opens with the number of mutants and of the changed lines with bytecode that carry one, such as `8 mutants
+on 7 of 24 changed lines`. Mutation testing checks nothing on the other changed lines, whatever their coverage.
+
 `pitestDiff` is not part of `test`, and a surviving mutant never fails the build. It costs one run of the target tests
 plus a partial run per mutant, so narrow `-Pcribro.pitestTargetTests` to the test classes that exercise the change
 (comma-separated, globs allowed). The task is skipped when the branch changed no line in the module's main sources.

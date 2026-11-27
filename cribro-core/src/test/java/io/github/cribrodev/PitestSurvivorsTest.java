@@ -17,12 +17,14 @@ package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,9 +43,7 @@ class PitestSurvivorsTest {
           + " next to the tests named for its line\n"
           + "  - no caller can observe the difference, so the mutant is equivalent:"
           + " say so in the pull request\n"
-          + "  - you cannot tell: report it as unresolved\n"
-          + "\n"
-          + "PIT generates no mutant on a line that calls a logging library.";
+          + "  - you cannot tell: report it as unresolved";
 
   @TempDir Path repository;
 
@@ -70,9 +70,12 @@ class PitestSurvivorsTest {
     return file;
   }
 
-  /** Reads a run whose sources are com/x/A.java and com/x/B.java, each with five lines. */
+  /**
+   * Reads a run whose sources are com/x/A.java and com/x/B.java, each with five lines, and whose
+   * changed lines with bytecode are the lines of its mutants.
+   */
   private PitestSurvivors run(String... mutations) throws IOException {
-    return run(Map.of(), mutations);
+    return read(Map.of(), Map.of(), mutations);
   }
 
   /**
@@ -80,6 +83,25 @@ class PitestSurvivorsTest {
    * root {@code src}, with the changed-lines file naming the given path for each key.
    */
   private PitestSurvivors run(Map<String, String> paths, String... mutations) throws IOException {
+    return read(paths, Map.of(), mutations);
+  }
+
+  /**
+   * Reads a run whose sources are com/x/A.java and com/x/B.java, each with five lines, and which
+   * recorded the given changed lines with bytecode, or wrote no such record where null.
+   */
+  private PitestSurvivors runRecording(
+      Map<String, Set<Integer>> withBytecode, String... mutations) throws IOException {
+    return read(Map.of(), withBytecode, mutations);
+  }
+
+  /**
+   * Reads a run whose sources are com/x/A.java and com/x/B.java, each with five lines, under the
+   * root {@code src}.
+   */
+  private PitestSurvivors read(
+      Map<String, String> paths, Map<String, Set<Integer>> withBytecode, String... mutations)
+      throws IOException {
     Path sources = repository.resolve("src");
     Files.createDirectories(sources.resolve("com/x"));
     Files.writeString(sources.resolve("com/x/A.java"), "a1\n  a2\na3\na4\na5\n");
@@ -89,7 +111,23 @@ class PitestSurvivorsTest {
         mutantsFile(mutations).toFile(),
         repository.toFile(),
         List.of(new File("absent"), sources.toFile()),
-        paths);
+        paths,
+        withBytecode);
+  }
+
+  /**
+   * Reads a run that wrote no mutants.tsv, as PIT does where it generated no mutant on the changed
+   * lines, and which recorded the given changed lines with bytecode.
+   */
+  private PitestSurvivors runWithoutMutantsFile(Map<String, Set<Integer>> withBytecode)
+      throws IOException {
+    return PitestSurvivors.read(
+        "against origin/master (abc), all tests",
+        repository.resolve("absent/mutants.tsv").toFile(),
+        repository.toFile(),
+        List.of(repository.toFile()),
+        Map.of(),
+        withBytecode);
   }
 
   /** Writes a file of the repository. */
@@ -108,7 +146,7 @@ class PitestSurvivorsTest {
       write("gen/A.java", "g1\ng2\n");
       assertEquals(
           "Mutation testing of changed lines against origin/master (abc), all tests\n"
-              + "  1 mutant: 0 killed, 1 survived, 0 not reached by any test\n"
+              + "  1 mutant on 1 of 1 changed line: 0 killed, 1 survived, 0 not reached by any test\n"
               + "  ordered by live mutants per file, then by line\n"
               + "\n"
               + "  gen/A.java\n"
@@ -127,7 +165,7 @@ class PitestSurvivorsTest {
     void aPathTheChangedLinesFileNamesThatNoLongerExistsFallsBackToTheRoots() throws IOException {
       assertEquals(
           "Mutation testing of changed lines against origin/master (abc), all tests\n"
-              + "  1 mutant: 0 killed, 1 survived, 0 not reached by any test\n"
+              + "  1 mutant on 1 of 1 changed line: 0 killed, 1 survived, 0 not reached by any test\n"
               + "  ordered by live mutants per file, then by line\n"
               + "\n"
               + "  src/com/x/A.java\n"
@@ -147,7 +185,7 @@ class PitestSurvivorsTest {
       write("src/D.java", "d1\n");
       assertEquals(
           "Mutation testing of changed lines against origin/master (abc), all tests\n"
-              + "  1 mutant: 0 killed, 1 survived, 0 not reached by any test\n"
+              + "  1 mutant on 1 of 1 changed line: 0 killed, 1 survived, 0 not reached by any test\n"
               + "  ordered by live mutants per file, then by line\n"
               + "\n"
               + "  src/D.java\n"
@@ -165,7 +203,7 @@ class PitestSurvivorsTest {
   void liveMutantsAreGroupedByFileAndLineWithTheTestsThatReachThem() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  4 mutants: 1 killed, 2 survived, 1 not reached by any test\n"
+            + "  4 mutants on 3 of 3 changed lines: 1 killed, 2 survived, 1 not reached by any test\n"
             + "  ordered by live mutants per file, then by line\n"
             + "\n"
             + "  src/com/x/A.java\n"
@@ -190,7 +228,7 @@ class PitestSurvivorsTest {
   void aTimeoutCountsAsKilledAndANonViableMutantIsCountedApart() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  3 mutants: 2 killed (1 timed out), 0 survived, 0 not reached by any test,"
+            + "  3 mutants on 3 of 3 changed lines: 2 killed (1 timed out), 0 survived, 0 not reached by any test,"
             + " 1 NON_VIABLE",
         run(
                 mutation("KILLED", "A", "A.java", 1, "removed call"),
@@ -203,7 +241,7 @@ class PitestSurvivorsTest {
   void theKilledCountNamesTheTimeoutsAndTheMemoryErrorsAmongIt() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  4 mutants: 4 killed (2 timed out, 1 out of memory), 0 survived,"
+            + "  4 mutants on 4 of 4 changed lines: 4 killed (2 timed out, 1 out of memory), 0 survived,"
             + " 0 not reached by any test",
         run(
                 mutation("MEMORY_ERROR", "A", "A.java", 1, "removed call"),
@@ -213,11 +251,87 @@ class PitestSurvivorsTest {
             .render(DiffCoverageReport.Limits.NONE, List.of()));
   }
 
+  @Nested
+  class TheChangedLineCount {
+
+    @Test
+    void countsTheLinesWithAMutantAmongTheChangedLinesWithBytecode() throws IOException {
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  3 mutants on 2 of 4 changed lines: 3 killed, 0 survived,"
+              + " 0 not reached by any test\n"
+              + "\n"
+              + "PIT generates no mutant on a line that calls a logging library.",
+          runRecording(
+                  Map.of("com/x/A.java", Set.of(1, 2, 3), "com/x/B.java", Set.of(1)),
+                  mutation("KILLED", "A", "A.java", 1, "removed call"),
+                  mutation("KILLED", "A", "A.java", 1, "negated conditional"),
+                  mutation("KILLED", "B", "B.java", 1, "removed call"))
+              .render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
+
+    @Test
+    void aMutatedLineTheRunDidNotRecordStillCountsAsALineWithBytecode() throws IOException {
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  1 mutant on 1 of 2 changed lines: 1 killed, 0 survived,"
+              + " 0 not reached by any test\n"
+              + "\n"
+              + "PIT generates no mutant on a line that calls a logging library.",
+          runRecording(
+                  Map.of("com/x/A.java", Set.of(1)),
+                  mutation("KILLED", "A", "A.java", 2, "removed call"))
+              .render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
+
+    @Test
+    void withoutTheRecordedLinesOnlyTheLinesWithAMutantAreCounted() throws IOException {
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  3 mutants on 2 changed lines: 3 killed, 0 survived, 0 not reached by any test",
+          runRecording(
+                  null,
+                  mutation("KILLED", "A", "A.java", 1, "removed call"),
+                  mutation("KILLED", "A", "A.java", 1, "negated conditional"),
+                  mutation("KILLED", "A", "A.java", 2, "removed call"))
+              .render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
+
+    @Test
+    void withoutTheRecordedLinesASurvivorStillGetsTheNoteOnUnmutatedLines() throws IOException {
+      String report =
+          runRecording(null, mutation("SURVIVED", "A", "A.java", 1, "removed call", "T.p"))
+              .render(DiffCoverageReport.Limits.NONE, List.of());
+      assertTrue(
+          report.endsWith("PIT generates no mutant on a line that calls a logging library."),
+          report);
+    }
+
+    @Test
+    void aRunWithNoMutantCountsTheChangedLinesWithBytecode() throws IOException {
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  no mutant: PIT generated none on the 2 changed lines\n"
+              + "\n"
+              + "PIT generates no mutant on a line that calls a logging library.",
+          runWithoutMutantsFile(Map.of("com/x/A.java", Set.of(1, 2)))
+              .render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
+
+    @Test
+    void aRunWhoseChangedLinesHaveNoBytecodeSaysSo() throws IOException {
+      assertEquals(
+          "Mutation testing of changed lines against origin/master (abc), all tests\n"
+              + "  no mutant: no changed line has bytecode PIT may mutate",
+          runWithoutMutantsFile(Map.of()).render(DiffCoverageReport.Limits.NONE, List.of()));
+    }
+  }
+
   @Test
   void aRunInWhichNoTestReachedAnyLineSaysWhyThatCanHappen() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  1 mutant: 0 killed, 0 survived, 1 not reached by any test\n"
+            + "  1 mutant on 1 of 1 changed line: 0 killed, 0 survived, 1 not reached by any test\n"
             + "  ordered by live mutants per file, then by line\n"
             + "\n"
             + "No test reached any of the changed lines. Either no test of this module exercises this"
@@ -238,7 +352,7 @@ class PitestSurvivorsTest {
   void theFileWithMoreLiveMutantsComesFirst() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  3 mutants: 0 killed, 3 survived, 0 not reached by any test\n"
+            + "  3 mutants on 3 of 3 changed lines: 0 killed, 3 survived, 0 not reached by any test\n"
             + "  ordered by live mutants per file, then by line\n"
             + "\n"
             + "  src/com/x/B.java\n"
@@ -263,7 +377,7 @@ class PitestSurvivorsTest {
   void theTotalLineLimitEndsTheReportAfterTheLinesItAllows() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  3 mutants: 0 killed, 3 survived, 0 not reached by any test\n"
+            + "  3 mutants on 3 of 3 changed lines: 0 killed, 3 survived, 0 not reached by any test\n"
             + "  ordered by live mutants per file, then by line\n"
             + "\n"
             + "  src/com/x/B.java\n"
@@ -318,7 +432,7 @@ class PitestSurvivorsTest {
   void theTestsNamedFirstAreTheOnesReachingTheMostLiveMutants() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  2 mutants: 0 killed, 2 survived, 0 not reached by any test\n"
+            + "  2 mutants on 2 of 2 changed lines: 0 killed, 2 survived, 0 not reached by any test\n"
             + "  ordered by live mutants per file, then by line\n"
             + "\n"
             + "  src/com/x/A.java\n"
@@ -347,7 +461,7 @@ class PitestSurvivorsTest {
   void theLimitsCutLinesAndFilesAndTheReportNamesTheFullOne() throws IOException {
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  3 mutants: 0 killed, 3 survived, 0 not reached by any test\n"
+            + "  3 mutants on 3 of 3 changed lines: 0 killed, 3 survived, 0 not reached by any test\n"
             + "  ordered by live mutants per file, then by line\n"
             + "\n"
             + "  src/com/x/A.java\n"
@@ -379,7 +493,8 @@ class PitestSurvivorsTest {
             build.resolve("mutants.tsv").toFile(),
             repository.toFile(),
             List.of(repository.toFile()),
-            Map.of());
+            Map.of(),
+            null);
 
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
@@ -412,11 +527,12 @@ class PitestSurvivorsTest {
             mutantsFile(mutation("SURVIVED", "A", "A.java", 1, "removed call")).toFile(),
             repository.toFile(),
             List.of(sources.toFile()),
+            Map.of(),
             Map.of());
 
     assertEquals(
         "Mutation testing of changed lines against origin/master (abc), all tests\n"
-            + "  1 mutant: 0 killed, 1 survived, 0 not reached by any test\n"
+            + "  1 mutant on 1 of 1 changed line: 0 killed, 1 survived, 0 not reached by any test\n"
             + "  ordered by live mutants per file, then by line\n"
             + "\n"
             + "  src/com/x/A.java\n"

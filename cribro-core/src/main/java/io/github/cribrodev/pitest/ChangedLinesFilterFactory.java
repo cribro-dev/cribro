@@ -34,7 +34,8 @@ import org.pitest.plugin.Feature;
  * puts the factory there also sets the property: the Gradle {@code pitestDiff} task and the Maven
  * goal {@code cribro:pitest-diff} do both. The feature is on by default so that the caller need not
  * also pass {@code --features}, and a missing property fails the run rather than letting it mutate
- * every line of the target classes.
+ * every line of the target classes. The filter writes the changed lines with bytecode to PIT's
+ * report directory.
  */
 public final class ChangedLinesFilterFactory implements MutationInterceptorFactory {
 
@@ -60,11 +61,16 @@ public final class ChangedLinesFilterFactory implements MutationInterceptorFacto
           "System property " + PROPERTY + " is not set; it must name the changed-lines file");
     }
     Map<String, NavigableSet<Integer>> lines;
+    Map<String, String> paths;
     try {
       lines = ChangedLinesFile.read(Path.of(file));
+      paths = ChangedLinesFile.readPaths(Path.of(file));
     } catch (IOException e) {
       throw new UncheckedIOException("Cannot read the changed-lines file " + file, e);
     }
-    return new ChangedLinesFilter(lines);
+    return new ChangedLinesFilter(
+        lines,
+        paths,
+        Path.of(params.data().getReportDir()).resolve(ChangedLinesFile.WITH_BYTECODE));
   }
 }
