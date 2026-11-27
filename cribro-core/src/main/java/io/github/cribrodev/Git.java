@@ -52,11 +52,22 @@ public final class Git {
   }
 
   private final File repositoryRoot;
+  private final Map<String, String> environment;
   private final Map<List<String>, Output> outputs = new ConcurrentHashMap<>();
   private final Map<Optional<String>, Optional<ChangedLines>> diffs = new ConcurrentHashMap<>();
 
+  /** Runs git with the environment {@link System#getenv()} returns when the instance is built. */
   public Git(File repositoryRoot) {
+    this(repositoryRoot, System.getenv());
+  }
+
+  /**
+   * Runs git with the given environment variables and no others, whatever the native environment
+   * of this process holds.
+   */
+  Git(File repositoryRoot, Map<String, String> environment) {
     this.repositoryRoot = repositoryRoot;
+    this.environment = Map.copyOf(environment);
   }
 
   /**
@@ -125,7 +136,13 @@ public final class Git {
     command.add("git");
     command.addAll(arguments);
     try {
-      Process process = new ProcessBuilder(command).directory(repositoryRoot).start();
+      ProcessBuilder builder = new ProcessBuilder(command).directory(repositoryRoot);
+      // A child the environment is never set for gets the native environment of this process, and
+      // a reused Gradle daemon on macOS can keep a variable there that System.getenv() reports
+      // absent (gradle/gradle#27346). A stale GIT_INDEX_FILE makes every tracked file untracked.
+      builder.environment().clear();
+      builder.environment().putAll(environment);
+      Process process = builder.start();
       process.getOutputStream().close();
       // Both streams are drained at once: a child that fills one pipe while nobody reads it blocks.
       CompletableFuture<String> error =
