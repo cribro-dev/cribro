@@ -98,6 +98,18 @@ class SourceFileKeyTest {
               "@file:JvmName(\"\"\"a\"\"\"\")\npackage demo\n",
               true),
           argumentSet(
+              "a raw string argument that starts with a quote",
+              "@file:JvmName(\"\"\"\"x\"\"\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a backslash before the closing quotes of a raw string argument",
+              "@file:JvmName(\"\"\"C:\\\"\"\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a dollar sign and a brace in a Java string argument",
+              "@Deprecated(since = \"${\" + \")\")\npackage demo;\n",
+              false),
+          argumentSet(
               "a bracket in a block comment in Kotlin arguments",
               "@file:Suppress(/* ) */ \"X\")\npackage demo\n",
               true),
@@ -119,7 +131,128 @@ class SourceFileKeyTest {
           argumentSet(
               "nested brackets in the arguments",
               "@file:Suppress(names = [(\"a\")])\npackage demo\n",
-              true));
+              true),
+          argumentSet(
+              "spaces around a dot in a Kotlin annotation name",
+              "@file:kotlin . jvm.JvmName(\"U\")\npackage demo\nfun f() = 1\n",
+              true),
+          argumentSet(
+              "spaces around a dot in a Java annotation name",
+              "@java.lang . Deprecated\npackage demo;\n",
+              false),
+          argumentSet(
+              "comments around a dot in an annotation name",
+              "@java/* a */./* b */lang.Deprecated\npackage demo;\n",
+              false),
+          argumentSet(
+              "a backticked annotation name", "@file:`Suppress`(\"x\")\npackage demo\n", true),
+          argumentSet(
+              "a supplementary letter in an annotation name",
+              "@Ann\uD835\uDC65\npackage demo;\n",
+              false),
+          argumentSet(
+              "spaced qualified names in an annotation list",
+              "@file : [kotlin /* c */ . jvm . JvmMultifileClass Suppress(\"y\")]\npackage demo\n",
+              true),
+          argumentSet(
+              "an escaped quote run in a text block argument",
+              "@Deprecated(since = \"\"\"\n    a\\\"\"\"b\"\"\")\npackage demo;\n",
+              false),
+          argumentSet(
+              "an escaped backslash that ends a text block argument",
+              "@Deprecated(since = \"\"\"\n    a\\\\\"\"\")\npackage demo;\n",
+              false),
+          argumentSet(
+              "a quote in a character argument",
+              "@Deprecated(since = \"\" + '\"' + \")\")\npackage demo;\n",
+              false),
+          argumentSet(
+              "an escaped apostrophe in a character argument",
+              "@Deprecated(since = \"\" + '\\'' + \")\")\npackage demo;\n",
+              false),
+          argumentSet(
+              "a string template holding a brace in a string",
+              "@file:Suppress(\"${\"}\"}\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a string template holding a bracket in a string",
+              "@file:Suppress(\"${\")\"}\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a string template holding a quote in a character",
+              "@file:Suppress(\"${'\"'}\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a string template holding a nested comment with a brace and a quote",
+              "@file:Suppress(\"${/* /* } */ \" */ 1}\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a raw string template holding a raw string",
+              "@file:Suppress(\"\"\"${\"\"\")\"\"\"}\"\"\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a string template after two dollar signs",
+              "@file:Suppress(\"$${\")\"}\")\npackage demo\n",
+              true),
+          argumentSet(
+              "an escaped dollar sign before a brace",
+              "@file:Suppress(\"\\${)\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a dollar sign and a brace in a two-dollar string",
+              "@file:Suppress($$\"${)\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a string template in a two-dollar string",
+              "@file:Suppress($$\"$$${\")\"}\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a Unicode escape for the at sign", "\\u0040Deprecated\npackage demo;\n", false),
+          argumentSet(
+              "Unicode escapes in the keyword and the name",
+              "\\u0070ackage d\\uuu0065mo;\n",
+              false),
+          argumentSet(
+              "a Unicode escape that ends a block comment", "/* \\u002a/\npackage demo;\n", false),
+          argumentSet(
+              "a Unicode escape after two backslashes that ends a block comment",
+              "/* \\\\\\u002a/ package demo; */\npackage not.this;\n",
+              false),
+          argumentSet(
+              "hexadecimal digits after a backslash with no u in a block comment",
+              "/* C:\\002a/ */\npackage demo;\n",
+              false),
+          argumentSet(
+              "a backslash and u with no hexadecimal digits in a line comment",
+              "// \\uzzzz\npackage demo;\n",
+              false),
+          argumentSet("a Unicode escape that ends the text", "package dem\\u006f", false),
+          argumentSet(
+              "a backslash and u that end the text", "package demo;\n// \\u", false),
+          argumentSet(
+              "type arguments in a Kotlin annotation",
+              "@file:Foo<String, (Int) -> Unit>(\"x\")\npackage demo\n",
+              true),
+          argumentSet(
+              "nested type arguments in a Kotlin annotation",
+              "@file:Foo<List<String>>(\"x\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a block comment holding a bracket in type arguments",
+              "@file:Foo<String /* > */>(\"x\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a line comment holding a bracket in type arguments",
+              "@file:Foo<String // >\n>(\"x\")\npackage demo\n",
+              true),
+          argumentSet(
+              "a bracket in a backticked argument", "@file:JvmName(`c)d`)\npackage demo\n", true),
+          argumentSet(
+              "a quote in a backticked argument", "@file:JvmName(`a\"b`)\npackage demo\n", true),
+          argumentSet(
+              "an escaped backslash before u in a block comment",
+              "/* \\\\u002a/ package not.this; */\npackage demo;\n",
+              false));
     }
 
     @ParameterizedTest
@@ -149,7 +282,9 @@ class SourceFileKeyTest {
               "an annotated declaration after the name",
               "package demo\n@Ann(\"${\"(\"}\")\nclass A\n",
               "demo"),
-          argumentSet("an identifier with digits and underscores", "package a_1.b2;\n", "a_1.b2"));
+          argumentSet("an identifier with digits and underscores", "package a_1.b2;\n", "a_1.b2"),
+          argumentSet(
+              "a supplementary letter in a segment", "package d\uD835\uDC65;\n", "d\uD835\uDC65"));
     }
 
     @ParameterizedTest
@@ -189,6 +324,14 @@ class SourceFileKeyTest {
           argumentSet("an unterminated string argument", "@file:JvmName(\"X)\npackage demo\n"),
           argumentSet(
               "an unterminated raw string argument", "@file:JvmName(\"\"\"X\"Y)\npackage demo\n"),
+          argumentSet(
+              "a raw string argument that ends the text", "@file:JvmName(\"\"\"a\"\"\""),
+          argumentSet(
+              "an unterminated string template", "@file:Suppress(\"${\")\npackage demo\n"),
+          argumentSet(
+              "an unterminated backticked argument", "@file:JvmName(`c)\npackage demo\n"),
+          argumentSet(
+              "unterminated type arguments", "@file:Foo<String(\"x\")\npackage demo\n"),
           argumentSet(
               "an unterminated comment in the arguments",
               "@file:Suppress(/* ) \"X\")\npackage demo\n"),
@@ -236,6 +379,18 @@ class SourceFileKeyTest {
     void aBlockCommentInArgumentsEndsAtItsMatchingCloseOnlyInKotlin(
         boolean kotlin, String expected) {
       String text = "@file:Suppress(/* /* */ ) */ \"X\")\npackage demo\n";
+      assertEquals(
+          expected, SourceFileKey.declaredPackage(text, kotlin), declaredPackageOf(text, kotlin));
+    }
+
+    static Stream<Arguments> unicodeEscapes() {
+      return Stream.of(argumentSet("Java", false, "x"), argumentSet("Kotlin", true, "y"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("unicodeEscapes")
+    void aUnicodeEscapeIsReadAsTheCharacterItStandsForOnlyInJava(boolean kotlin, String expected) {
+      String text = "// \\u000a package x;\npackage y;\n";
       assertEquals(
           expected, SourceFileKey.declaredPackage(text, kotlin), declaredPackageOf(text, kotlin));
     }
