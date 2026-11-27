@@ -150,7 +150,7 @@ final class ExposedCodeReport {
       if (region.called) {
         out.append(", whole body, called from ");
       } else {
-        out.append(" lines ")
+        out.append(", lines ")
             .append(region.lines.first())
             .append('-')
             .append(region.lines.last())

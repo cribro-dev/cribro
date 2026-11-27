@@ -54,10 +54,11 @@ lines are acknowledged:
 ### Unchanged code the change routes new inputs to
 
 A changed `case` label, a changed condition of an `if` or a loop, and a call on a changed line can send new inputs to
-lines nobody edited: the statements the label falls through to, the branches the condition guards, the body of a
-method of the same file that the call reaches. The block after the total lists those methods and the lines and
-branches of them the run did not cover. The change does not owe them a test, but they now run under conditions the old
-tests may never have set up.
+lines nobody edited: the statements the label falls through to, the branches the condition guards, the body of a method
+of the same file that the call reaches. The block after the total lists those methods, each by its name and parameter
+types, such as `helper(int)` or `Builder.build()` for a method of a nested class, and the lines and branches of them the
+run did not cover. The change does not owe them a test, but they now run under conditions the old tests may never have
+set up.
 
 After a run of the whole suite, old tests execute most of that code under the old conditions, so the block ends with
 the `-Dtest` arguments that run only the test methods the change added or edited under the module's own `src`
