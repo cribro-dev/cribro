@@ -17,6 +17,8 @@ package io.github.cribrodev;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,6 +27,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -38,13 +41,15 @@ import java.util.stream.Collectors;
  * <p>A mutant is live when its status is {@code SURVIVED} or {@code NO_COVERAGE}: the tests that
  * reached its line passed anyway, or no test reached it. {@code KILLED}, {@code TIMED_OUT}, and
  * {@code MEMORY_ERROR} mean the tests noticed the mutant and are counted as killed, and the count
- * names how many of them timed out or ran out of memory. Any other
- * status, such as {@code NON_VIABLE} for a mutant the JVM would not load, says nothing about the
- * tests and is counted under its own name.
+ * names how many of them timed out or ran out of memory. Any other status, such as {@code
+ * NON_VIABLE} for a mutant the JVM would not load, says nothing about the tests and is counted
+ * under its own name.
  *
  * <p>Each line is printed once, with its source text, every live mutant on it, the number of tests
  * PIT recorded as reaching it, and the few of them that reach the most live mutants of the report.
- * The mutants and their tests come from the {@link MutantsFile} the PIT listener writes.
+ * A parameterized or dynamic test counts as one test, and its name lists the invocations that
+ * reach the line, such as {@code CoreQuidemTest.test[1-3, 33]}. The mutants and their tests come
+ * from the {@link MutantsFile} the PIT listener writes.
  */
 public final class PitestSurvivors {
 
@@ -92,9 +97,13 @@ public final class PitestSurvivors {
   private static final class Mutant {
     private final String description;
     private final String method;
-    private final Set<String> tests;
+    private final Map<String, NavigableSet<List<Integer>>> tests;
 
-    Mutant(String description, String method, Set<String> tests) {
+    /**
+     * @param tests the short name of each test that reaches the mutant, with the invocations of
+     *     it PIT named; the set is empty for a test PIT names with no invocation
+     */
+    Mutant(String description, String method, Map<String, NavigableSet<List<Integer>>> tests) {
       this.description = description;
       this.method = method;
       this.tests = tests;
@@ -108,7 +117,7 @@ public final class PitestSurvivors {
       return method;
     }
 
-    Set<String> tests() {
+    Map<String, NavigableSet<List<Integer>>> tests() {
       return tests;
     }
   }
@@ -118,9 +127,13 @@ public final class PitestSurvivors {
     private final int number;
     private final String source;
     private final List<Mutant> mutants;
-    private final Set<String> tests;
+    private final Map<String, NavigableSet<List<Integer>>> tests;
 
-    Line(int number, String source, List<Mutant> mutants, Set<String> tests) {
+    Line(
+        int number,
+        String source,
+        List<Mutant> mutants,
+        Map<String, NavigableSet<List<Integer>>> tests) {
       this.number = number;
       this.source = source;
       this.mutants = mutants;
@@ -139,7 +152,7 @@ public final class PitestSurvivors {
       return mutants;
     }
 
-    Set<String> tests() {
+    Map<String, NavigableSet<List<Integer>>> tests() {
       return tests;
     }
   }
@@ -245,7 +258,7 @@ public final class PitestSurvivors {
     Map<String, TreeMap<Integer, List<Mutant>>> byFile = new HashMap<>();
     // Every mutant of a line names the tests that reach the line, so the same test names repeat
     // once per mutant, and each is shortened once.
-    Map<String, String> shortTestNames = new HashMap<>();
+    Map<String, TestName> shortTestNames = new HashMap<>();
     for (MutantsFile.Mutant mutant : reported) {
       statusCounts.merge(mutant.status(), 1, Integer::sum);
       int packageEnd = mutant.mutatedClass().lastIndexOf('.');
@@ -257,12 +270,15 @@ public final class PitestSurvivors {
       if (!isLive(mutant.status())) {
         continue;
       }
-      Set<String> tests = new TreeSet<>();
-      mutant.tests()
-          .forEach(
-              test ->
-                  tests.add(
-                      shortTestNames.computeIfAbsent(test, PitestSurvivors::shortTestName)));
+      Map<String, NavigableSet<List<Integer>>> tests = new TreeMap<>();
+      for (String test : mutant.tests()) {
+        TestName name = shortTestNames.computeIfAbsent(test, PitestSurvivors::shortTestName);
+        NavigableSet<List<Integer>> invocations =
+            tests.computeIfAbsent(name.name(), unused -> new TreeSet<>(INVOCATION_ORDER));
+        if (!name.invocation().isEmpty()) {
+          invocations.add(name.invocation());
+        }
+      }
       String description =
           (mutant.status().equals("NO_COVERAGE") ? "no test reaches it: " : "survived: ")
               + DESCRIPTION_SUFFIX.matcher(mutant.description()).replaceFirst("");
@@ -284,8 +300,16 @@ public final class PitestSurvivors {
       List<Line> lines = new ArrayList<>();
       for (Map.Entry<Integer, List<Mutant>> line : file.getValue().entrySet()) {
         int number = line.getKey();
-        Set<String> tests = new TreeSet<>();
-        line.getValue().forEach(mutant -> tests.addAll(mutant.tests()));
+        Map<String, NavigableSet<List<Integer>>> tests = new TreeMap<>();
+        for (Mutant mutant : line.getValue()) {
+          mutant
+              .tests()
+              .forEach(
+                  (name, invocations) ->
+                      tests
+                          .computeIfAbsent(name, unused -> new TreeSet<>(INVOCATION_ORDER))
+                          .addAll(invocations));
+        }
         lines.add(
             new Line(
                 number,
@@ -305,7 +329,7 @@ public final class PitestSurvivors {
     for (TreeMap<Integer, List<Mutant>> lines : byFile.values()) {
       for (List<Mutant> mutants : lines.values()) {
         for (Mutant mutant : mutants) {
-          mutant.tests().forEach(test -> liveMutantsReached.merge(test, 1, Integer::sum));
+          mutant.tests().keySet().forEach(test -> liveMutantsReached.merge(test, 1, Integer::sum));
         }
       }
     }
@@ -518,14 +542,14 @@ public final class PitestSurvivors {
       out.append("\n        ").append(mutant.description()).append(", in ").append(mutant.method());
     }
     if (!line.tests().isEmpty()) {
-      List<String> tests = new ArrayList<>(line.tests());
+      List<String> tests = new ArrayList<>(line.tests().keySet());
       tests.sort(testOrder);
       out.append("\n        reached by ")
           .append(tests.size())
           .append(tests.size() == 1 ? " test" : " tests")
           .append(tests.size() > TESTS_SHOWN ? ", among them:" : ":");
       for (String test : tests.subList(0, Math.min(TESTS_SHOWN, tests.size()))) {
-        out.append("\n          ").append(test);
+        out.append("\n          ").append(test).append(invocations(line.tests().get(test)));
       }
     }
   }
@@ -543,47 +567,217 @@ public final class PitestSurvivors {
   }
 
   /**
+   * A test as the report names it: the short name of the test, and the index of the invocation,
+   * where the name PIT recorded carries one.
+   */
+  static final class TestName {
+    private final String name;
+    private final List<Integer> invocation;
+
+    TestName(String name, List<Integer> invocation) {
+      this.name = name;
+      this.invocation = invocation;
+    }
+
+    String name() {
+      return name;
+    }
+
+    /**
+     * Returns the index of the invocation as the test engine numbers it, one number per level where
+     * invocations nest, as dynamic tests in a dynamic container do; empty for a test with no
+     * invocation.
+     */
+    List<Integer> invocation() {
+      return invocation;
+    }
+
+    /** Returns the name the report prints for this invocation alone, such as {@code T.m[3]}. */
+    @Override
+    public String toString() {
+      return invocation.isEmpty() ? name : name + "[" + index(invocation) + "]";
+    }
+  }
+
+  /**
    * Returns {@code Class.method} for a test PIT names {@code pkg.Class.method(pkg.Class)}, and
    * {@code Class$Nested.method} for a JUnit Platform test, which PIT names by its unique id, such as
    * {@code pkg.Class.[engine:junit-jupiter]/[class:pkg.Class]/[nested-class:Nested]/[test-template:
-   * method(int)]/[test-template-invocation:#3]}. The invocations of one parameterized test collapse
-   * into one name. A JUnit Platform id with no class segment this method knows is returned whole,
-   * since cutting it at dots would produce a name no test has.
+   * method(int)]/[test-template-invocation:#3]}.
+   *
+   * <p>Each segment of a unique id is read by its type, after its value is decoded. A class segment,
+   * such as {@code class}, {@code class-template}, or Vintage's {@code runner}, starts the name
+   * afresh; a nested class segment adds {@code $Nested}. The last method segment names the method:
+   * {@code method}, {@code test-template}, {@code test-factory}, or jqwik's {@code property}, and
+   * Vintage's {@code test}, whose value is a JUnit 4 description such as {@code method[3](pkg.Class)}.
+   * The invocation lists, outer level first, the number of each segment after the last class segment
+   * whose value is {@code #} and a number, here {@code 3}, and the index in brackets that ends a
+   * JUnit 4 method name. A JUnit 4 parameterized test that PIT runs itself is named {@code
+   * pkg.Class.method[3](pkg.Class)}, with its index in brackets too. A JUnit Platform id with no
+   * class segment this method knows is returned whole, since cutting it at dots would produce a name
+   * no test has.
    */
-  static String shortTestName(String name) {
-    Matcher segment = PLATFORM_SEGMENT.matcher(name);
-    if (name.contains("[engine:")) {
-      StringBuilder shortName = new StringBuilder();
-      String method = null;
-      while (segment.find()) {
-        String type = segment.group(1);
-        String value = segment.group(2);
-        if (CLASS_SEGMENTS.contains(type)) {
-          shortName.setLength(0);
-          shortName.append(value.substring(value.lastIndexOf('.') + 1));
-        } else if (type.equals("nested-class")) {
-          shortName.append('$').append(value);
-        } else if (method == null && METHOD_SEGMENTS.contains(type)) {
-          int paren = value.indexOf('(');
-          method = paren < 0 ? value : value.substring(0, paren);
-        }
+  static TestName shortTestName(String name) {
+    if (!name.contains("[engine:")) {
+      int paren = name.lastIndexOf('(');
+      String testClass =
+          paren >= 0 && name.endsWith(")") ? name.substring(paren + 1, name.length() - 1) : null;
+      if (testClass != null && name.startsWith(testClass + ".")) {
+        TestName method = junit4Method(name.substring(testClass.length() + 1, paren));
+        return new TestName(
+            testClass.substring(testClass.lastIndexOf('.') + 1) + "." + method.name(),
+            method.invocation());
       }
-      if (shortName.length() == 0) {
-        return name;
-      }
-      return method == null ? shortName.toString() : shortName + "." + method;
+      TestName method = junit4Method(paren < 0 ? name : name.substring(0, paren));
+      String qualified = method.name();
+      int methodStart = qualified.lastIndexOf('.');
+      int classStart = qualified.lastIndexOf('.', methodStart - 1);
+      return new TestName(qualified.substring(classStart + 1), method.invocation());
     }
-    int paren = name.indexOf('(');
-    String qualified = paren < 0 ? name : name.substring(0, paren);
-    int methodStart = qualified.lastIndexOf('.');
-    int classStart = qualified.lastIndexOf('.', methodStart - 1);
-    return qualified.substring(classStart + 1);
+    Matcher segment = PLATFORM_SEGMENT.matcher(name);
+    StringBuilder shortName = new StringBuilder();
+    String method = null;
+    List<Integer> invocation = new ArrayList<>();
+    while (segment.find()) {
+      String type = segment.group(1);
+      String value = decode(segment.group(2));
+      Matcher index = INVOCATION_INDEX.matcher(value);
+      if (CLASS_SEGMENTS.contains(type)) {
+        shortName.setLength(0);
+        shortName.append(value.substring(value.lastIndexOf('.') + 1));
+        method = null;
+        invocation.clear();
+      } else if (NESTED_CLASS_SEGMENTS.contains(type)) {
+        shortName.append('$').append(value);
+      } else if (METHOD_SEGMENTS.contains(type)) {
+        int paren = value.lastIndexOf('(');
+        method = paren < 0 ? value : value.substring(0, paren);
+      } else if (index.matches()) {
+        invocation.add(Integer.valueOf(index.group(1)));
+      }
+    }
+    if (shortName.length() == 0) {
+      return new TestName(name, List.of());
+    }
+    if (method == null) {
+      return new TestName(shortName.toString(), List.copyOf(invocation));
+    }
+    TestName junit4 = junit4Method(method);
+    invocation.addAll(junit4.invocation());
+    return new TestName(shortName + "." + junit4.name(), List.copyOf(invocation));
   }
+
+  /**
+   * Returns a JUnit 4 method name without the index in brackets that ends it, such as {@code m}
+   * and {@code 3} for {@code m[3]}; a name with no such index is returned whole.
+   */
+  private static TestName junit4Method(String method) {
+    Matcher index = JUNIT4_INDEX.matcher(method);
+    return index.matches()
+        ? new TestName(index.group(1), List.of(Integer.valueOf(index.group(2))))
+        : new TestName(method, List.of());
+  }
+
+  /**
+   * Returns the value of a unique-id segment with its {@code %XX} escapes decoded. The JUnit
+   * Platform escapes {@code %}, {@code +}, and the characters that delimit segments, so a value
+   * holds no other {@code %} and no {@code +}; a value that is not escaped that way is returned as
+   * it is.
+   */
+  private static String decode(String value) {
+    try {
+      return URLDecoder.decode(value, StandardCharsets.UTF_8);
+    } catch (IllegalArgumentException e) {
+      return value;
+    }
+  }
+
+  /**
+   * Returns the invocations of one test in brackets, such as {@code [1-3, 33]}, with each run of
+   * consecutive indexes as a range; empty for a test with no invocation.
+   */
+  static String invocations(NavigableSet<List<Integer>> invocations) {
+    if (invocations.isEmpty()) {
+      return "";
+    }
+    List<String> parts = new ArrayList<>();
+    List<Integer> first = null;
+    List<Integer> last = null;
+    for (List<Integer> invocation : invocations) {
+      if (last != null && follows(last, invocation)) {
+        last = invocation;
+        continue;
+      }
+      if (first != null) {
+        parts.add(range(first, last));
+      }
+      first = invocation;
+      last = invocation;
+    }
+    parts.add(range(first, last));
+    return "[" + String.join(", ", parts) + "]";
+  }
+
+  /** Returns whether the invocation comes right after the previous one of the same level. */
+  private static boolean follows(List<Integer> previous, List<Integer> invocation) {
+    int depth = invocation.size();
+    return previous.size() == depth
+        && previous.subList(0, depth - 1).equals(invocation.subList(0, depth - 1))
+        && previous.get(depth - 1) + 1 == invocation.get(depth - 1);
+  }
+
+  private static String range(List<Integer> first, List<Integer> last) {
+    return first.equals(last) ? index(first) : index(first) + "-" + last.get(last.size() - 1);
+  }
+
+  /** Returns the index of an invocation, its levels separated by {@code /}, such as {@code 2/5}. */
+  private static String index(List<Integer> invocation) {
+    return invocation.stream().map(String::valueOf).collect(Collectors.joining("/"));
+  }
+
+  /** Orders invocations by their indexes, as numbers, outer level first. */
+  private static final Comparator<List<Integer>> INVOCATION_ORDER =
+      (a, b) -> {
+        for (int i = 0; i < Math.min(a.size(), b.size()); i++) {
+          int order = Integer.compare(a.get(i), b.get(i));
+          if (order != 0) {
+            return order;
+          }
+        }
+        return Integer.compare(a.size(), b.size());
+      };
+
+  /**
+   * The digits of an invocation index: a decimal with no leading zero and at most 9 digits, so it
+   * always fits an {@code int}. A JUnit 4 name can hold any text in brackets, such as an 11-digit
+   * parameter, and the name keeps what does not match.
+   */
+  private static final String INDEX = "(0|[1-9]\\d{0,8})";
+
+  /** The value of a JUnit Platform segment naming one invocation, such as {@code #3}. */
+  private static final Pattern INVOCATION_INDEX = Pattern.compile("#" + INDEX);
+
+  /** A JUnit 4 parameterized test method with its default name, such as {@code pkg.C.m[3]}. */
+  private static final Pattern JUNIT4_INDEX = Pattern.compile("(.*)\\[" + INDEX + "\\]");
 
   private static final Pattern PLATFORM_SEGMENT = Pattern.compile("\\[([a-z-]+):([^\\]]*)\\]");
 
-  /** Segments naming a test class: Jupiter's, Vintage's, and Spock's. */
-  private static final Set<String> CLASS_SEGMENTS = Set.of("class", "runner", "spec");
+  /**
+   * Segments whose value is the binary name of a test class: Jupiter's, including those of a class
+   * template and of a nested class named in full, Vintage's, and Spock's.
+   */
+  private static final Set<String> CLASS_SEGMENTS =
+      Set.of(
+          "class",
+          "class-template",
+          "fq-nested-class",
+          "fq-nested-class-template",
+          "runner",
+          "spec");
+
+  /** Segments whose value is the simple name of a class nested in the class before it. */
+  private static final Set<String> NESTED_CLASS_SEGMENTS =
+      Set.of("nested-class", "nested-class-template");
 
   /** Segments naming a test method: Jupiter's, Vintage's, and jqwik's. */
   private static final Set<String> METHOD_SEGMENTS =

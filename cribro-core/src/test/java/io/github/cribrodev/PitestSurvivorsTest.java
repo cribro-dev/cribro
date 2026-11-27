@@ -15,9 +15,11 @@
  */
 package io.github.cribrodev;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.params.provider.Arguments.argumentSet;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,9 +27,13 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The report prints each live mutant under its file and line, with the line's source text and the
@@ -457,6 +463,75 @@ class PitestSurvivorsTest {
             .render(DiffCoverageReport.Limits.NONE, List.of()));
   }
 
+  /**
+   * T.p reaches two live mutants through five invocations, and U.q reaches three live mutants, so
+   * U.q is named first only where each invocation of T.p does not count as a test of its own.
+   */
+  @Test
+  void theInvocationsOfOneTestShareARowAndCountAsOneTest() throws IOException {
+    assertEquals(
+        "Mutation testing of changed lines against origin/master (abc), all tests\n"
+            + "  3 mutants on 2 of 2 changed lines: 0 killed, 3 survived, 0 not reached by any test\n"
+            + "  ordered by live mutants per file, then by line\n"
+            + "\n"
+            + "  src/com/x/A.java\n"
+            + "    1: a1\n"
+            + "        survived: removed call, in m\n"
+            + "        survived: negated conditional, in m\n"
+            + "        reached by 2 tests:\n"
+            + "          U.q\n"
+            + "          T.p[1-3, 10, 33]\n"
+            + "\n"
+            + "  src/com/x/B.java\n"
+            + "    1: b1\n"
+            + "        survived: removed call, in m\n"
+            + "        reached by 1 test:\n"
+            + "          U.q\n"
+            + "\n"
+            + "Live mutants on 2 lines in 2 files." + LIVE_FOOTER,
+        run(
+                mutation(
+                    "SURVIVED", "A", "A.java", 1, "removed call",
+                    "T.p[33]", "T.p[2]", "T.p[10]", "T.p[1]", "U.q"),
+                mutation("SURVIVED", "A", "A.java", 1, "negated conditional", "T.p[3]", "U.q"),
+                mutation("SURVIVED", "B", "B.java", 1, "removed call", "U.q"))
+            .render(DiffCoverageReport.Limits.NONE, List.of()));
+  }
+
+  /** A range joins the invocations of one container and stops where the container changes. */
+  @Test
+  void consecutiveNestedInvocationsShareARange() throws IOException {
+    String report =
+        run(
+                mutation(
+                    "SURVIVED", "A", "A.java", 1, "removed call",
+                    dynamic(2, 5), dynamic(2, 6), dynamic(2, 7), dynamic(3, 1)))
+            .render(DiffCoverageReport.Limits.NONE, List.of());
+    assertTrue(report.contains("\n          FooTest.cases[2/5-7, 3/1]\n"), report);
+  }
+
+  /**
+   * A test factory that returns a dynamic test beside a dynamic container gives one test an
+   * invocation at each of two levels.
+   */
+  @Test
+  void invocationsAtTwoLevelsAreListedApart() throws IOException {
+    String report =
+        run(
+                mutation(
+                    "SURVIVED", "A", "A.java", 1, "removed call",
+                    dynamic(2, 1),
+                    "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]"
+                        + "/[test-factory:cases()]/[dynamic-test:#2]"))
+            .render(DiffCoverageReport.Limits.NONE, List.of());
+    assertTrue(report.contains("\n          FooTest.cases[2, 2/1]\n"), report);
+  }
+
+  private static String dynamic(int container, int test) {
+    return "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]/[test-factory:cases()]"
+        + "/[dynamic-container:#" + container + "]/[dynamic-test:#" + test + "]";
+  }
+
   @Test
   void theLimitsCutLinesAndFilesAndTheReportNamesTheFullOne() throws IOException {
     assertEquals(
@@ -561,51 +636,201 @@ class PitestSurvivorsTest {
     void aJUnit4TestIsNamedByClassAndMethod() {
       assertEquals(
           "FooTest.bar",
-          PitestSurvivors.shortTestName("com.x.FooTest.bar(com.x.FooTest)"));
+          PitestSurvivors.shortTestName("com.x.FooTest.bar(com.x.FooTest)").toString());
     }
 
-    /** The invocations of a parameterized test share one name, so they count as one test. */
+    /** {@code @Parameters(name = "{0}")} puts the parameter in brackets, whatever its digits. */
     @Test
-    void aJUnitPlatformTestIsNamedByItsClassesAndMethod() {
+    void aNumberInBracketsThatIsNoIndexStaysInTheName() {
+      PitestSurvivors.TestName name =
+          PitestSurvivors.shortTestName("com.x.FooTest.bar[12345678901](com.x.FooTest)");
+      assertAll(
+          () -> assertEquals("FooTest.bar[12345678901]", name.name(), "name"),
+          () -> assertEquals(List.of(), name.invocation(), "invocation"));
+    }
+
+    @Test
+    void aNumberWithALeadingZeroInBracketsStaysInTheName() {
+      PitestSurvivors.TestName name =
+          PitestSurvivors.shortTestName("com.x.FooTest.bar[007](com.x.FooTest)");
+      assertAll(
+          () -> assertEquals("FooTest.bar[007]", name.name(), "name"),
+          () -> assertEquals(List.of(), name.invocation(), "invocation"));
+    }
+
+    @Test
+    void theFirstJUnit4IndexIsZero() {
       assertEquals(
-          "PgBufferedOutputStreamTest$ZeroTests.bufferFlushedOnlyWhenFull",
-          PitestSurvivors.shortTestName(
+          List.of(0),
+          PitestSurvivors.shortTestName("com.x.FooTest.bar[0](com.x.FooTest)").invocation());
+    }
+
+    @Test
+    void aTenDigitNumberInBracketsIsNoIndex() {
+      assertEquals(
+          "FooTest.bar[2147483648]",
+          PitestSurvivors.shortTestName("com.x.FooTest.bar[2147483648](com.x.FooTest)").toString());
+    }
+
+    @Test
+    void aNineDigitNumberInBracketsIsAnIndex() {
+      assertEquals(
+          List.of(123456789),
+          PitestSurvivors.shortTestName("com.x.FooTest.bar[123456789](com.x.FooTest)")
+              .invocation());
+    }
+
+    @Test
+    void aJUnit4ParameterizedTestIsNamedByClassMethodAndIndex() {
+      assertEquals(
+          "FooTest.bar[3]",
+          PitestSurvivors.shortTestName("com.x.FooTest.bar[3](com.x.FooTest)").toString());
+    }
+
+    /**
+     * {@code @Parameters(name = "{index}: fib({0})")} puts parentheses and a dot in the brackets, so
+     * the method name ends at the parenthesis that opens the class name.
+     */
+    @Test
+    void aJUnit4NameWithParenthesesAndADotKeepsThemInTheName() {
+      PitestSurvivors.TestName name =
+          PitestSurvivors.shortTestName("com.x.FibTest.test[0: fib(1.5)](com.x.FibTest)");
+      assertAll(
+          () -> assertEquals("FibTest.test[0: fib(1.5)]", name.name(), "name"),
+          () -> assertEquals(List.of(), name.invocation(), "invocation"));
+    }
+
+    @Test
+    void aNameThatEndsInAnOpenParenthesisIsCutThere() {
+      assertEquals("FooTest.bar", PitestSurvivors.shortTestName("com.x.FooTest.bar(").toString());
+    }
+
+    static Stream<Arguments> platformIds() {
+      return Stream.of(
+          argumentSet(
+              "Jupiter method",
+              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]/[method:bar()]",
+              "FooTest.bar",
+              List.of()),
+          argumentSet(
+              "Jupiter class",
+              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]",
+              "FooTest",
+              List.of()),
+          argumentSet(
+              "Jupiter method with an array parameter",
+              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]"
+                  + "/[method:bar(java.lang.String%5B%5D)]",
+              "FooTest.bar",
+              List.of()),
+          argumentSet(
+              "Jupiter test template in a nested class",
               "org.postgresql.util.internal.PgBufferedOutputStreamTest."
                   + "[engine:junit-jupiter]/[class:org.postgresql.util.internal.PgBufferedOutputStreamTest]"
                   + "/[nested-class:ZeroTests]/[test-template:bufferFlushedOnlyWhenFull(int, int)]"
-                  + "/[test-template-invocation:#38]"));
-    }
-
-    @Test
-    void aJupiterTestMethodIsNamedByClassAndMethod() {
-      assertEquals(
-          "FooTest.bar",
-          PitestSurvivors.shortTestName(
-              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]/[method:bar()]"));
-    }
-
-    @Test
-    void aJUnitVintageTestIsNamedByRunnerClassAndMethod() {
-      assertEquals(
-          "FooTest.bar",
-          PitestSurvivors.shortTestName(
+                  + "/[test-template-invocation:#38]",
+              "PgBufferedOutputStreamTest$ZeroTests.bufferFlushedOnlyWhenFull",
+              List.of(38)),
+          argumentSet(
+              "Jupiter method of a nested class inherited from another class",
+              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]"
+                  + "/[fq-nested-class:com.x.Base$Inner]/[method:bar()]",
+              "Base$Inner.bar",
+              List.of()),
+          argumentSet(
+              "Jupiter dynamic test in a dynamic container",
+              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]"
+                  + "/[test-factory:cases()]/[dynamic-container:#2]/[dynamic-test:#5]",
+              "FooTest.cases",
+              List.of(2, 5)),
+          argumentSet(
+              "Jupiter dynamic test whose index does not fit an int",
+              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]"
+                  + "/[test-factory:cases()]/[dynamic-test:#12345678901]",
+              "FooTest.cases",
+              List.of()),
+          argumentSet(
+              "Jupiter method of a class template",
+              "com.x.FooTest.[engine:junit-jupiter]/[class-template:com.x.FooTest]"
+                  + "/[class-template-invocation:#2]/[method:bar()]",
+              "FooTest.bar",
+              List.of(2)),
+          argumentSet(
+              "Jupiter test template of a class template",
+              "com.x.FooTest.[engine:junit-jupiter]/[class-template:com.x.FooTest]"
+                  + "/[class-template-invocation:#2]/[test-template:bar(int)]"
+                  + "/[test-template-invocation:#3]",
+              "FooTest.bar",
+              List.of(2, 3)),
+          argumentSet(
+              "Jupiter method of a nested class template",
+              "com.x.Outer.[engine:junit-jupiter]/[class:com.x.Outer]"
+                  + "/[nested-class-template:Inner]/[class-template-invocation:#1]/[method:bar()]",
+              "Outer$Inner.bar",
+              List.of(1)),
+          argumentSet(
+              "Jupiter method of a nested class template inherited from another class",
+              "com.x.Outer.[engine:junit-jupiter]/[class:com.x.Outer]"
+                  + "/[fq-nested-class-template:com.x.Base$Inner]/[class-template-invocation:#1]"
+                  + "/[method:bar()]",
+              "Base$Inner.bar",
+              List.of(1)),
+          argumentSet(
+              "jqwik property",
+              "com.x.FooTest.[engine:jqwik]/[class:com.x.FooTest]/[property:prop()]",
+              "FooTest.prop",
+              List.of()),
+          argumentSet(
+              "Vintage method",
               "com.x.FooTest.[engine:junit-vintage]/[runner:com.x.FooTest]"
-                  + "/[test:bar(com.x.FooTest)]"));
+                  + "/[test:bar(com.x.FooTest)]",
+              "FooTest.bar",
+              List.of()),
+          argumentSet(
+              "Vintage method of a class in a suite",
+              "com.x.AllTests.[engine:junit-vintage]/[runner:com.x.AllTests]"
+                  + "/[runner:com.x.FooTest]/[test:bar(com.x.FooTest)]",
+              "FooTest.bar",
+              List.of()),
+          argumentSet(
+              "Vintage parameterized method",
+              "com.x.FooTest.[engine:junit-vintage]/[runner:com.x.FooTest]"
+                  + "/[test:%5B0%5D]/[test:bar%5B0%5D(com.x.FooTest)]",
+              "FooTest.bar",
+              List.of(0)),
+          argumentSet(
+              "Vintage parameterized method with a named invocation",
+              "com.x.FooTest.[engine:junit-vintage]/[runner:com.x.FooTest]"
+                  + "/[test:%5Bfirst%5D]/[test:bar%5Bfirst%5D(com.x.FooTest)]",
+              "FooTest.bar[first]",
+              List.of()),
+          argumentSet(
+              "Vintage parameterized method with a slash and a percent sign in its invocation",
+              "com.x.FooTest.[engine:junit-vintage]/[runner:com.x.FooTest]"
+                  + "/[test:%5Ba%2Fb%25%5D]/[test:bar%5Ba%2Fb%25%5D(com.x.FooTest)]",
+              "FooTest.bar[a/b%]",
+              List.of()),
+          argumentSet(
+              "Vintage parameterized method whose invocation name holds parentheses",
+              "com.x.FibTest.[engine:junit-vintage]/[runner:com.x.FibTest]"
+                  + "/[test:%5B0%3A fib%281%29%5D]/[test:test%5B0%3A fib%281%29%5D(com.x.FibTest)]",
+              "FibTest.test[0: fib(1)]",
+              List.of()),
+          argumentSet(
+              "an engine with no class segment",
+              "com.x.Suite.[engine:other]/[container:com.x.example]/[case:first]",
+              "com.x.Suite.[engine:other]/[container:com.x.example]/[case:first]",
+              List.of()));
     }
 
-    /** Cut at dots, this id would name {@code example]/[case:first}, which is no test. */
-    @Test
-    void aJUnitPlatformIdWithNoKnownClassSegmentIsKeptWhole() {
-      String id = "com.x.Suite.[engine:other]/[container:com.x.example]/[case:first]";
-      assertEquals(id, PitestSurvivors.shortTestName(id));
-    }
-
-    @Test
-    void aJUnitPlatformClassLevelIdIsNamedByItsClass() {
-      assertEquals(
-          "FooTest",
-          PitestSurvivors.shortTestName(
-              "com.x.FooTest.[engine:junit-jupiter]/[class:com.x.FooTest]"));
+    @ParameterizedTest
+    @MethodSource("platformIds")
+    void aJUnitPlatformIdIsNamedByItsClassesAndMethodAndListsItsInvocation(
+        String id, String name, List<Integer> invocation) {
+      PitestSurvivors.TestName actual = PitestSurvivors.shortTestName(id);
+      assertAll(
+          () -> assertEquals(name, actual.name(), "name"),
+          () -> assertEquals(invocation, actual.invocation(), "invocation"));
     }
   }
 }

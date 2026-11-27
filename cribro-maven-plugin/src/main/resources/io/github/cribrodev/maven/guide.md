@@ -71,7 +71,9 @@ survives marks a changed line whose behavior no test asserts. For each live muta
 - you cannot tell: report it as unresolved.
 
 The report opens with the number of mutants and of the changed lines with bytecode that carry one, such as `8 mutants
-on 7 of 24 changed lines`. Mutation testing checks nothing on the other changed lines, whatever their coverage.
+on 7 of 24 changed lines`. Mutation testing checks nothing on the other changed lines, whatever their coverage. A
+parameterized test is named once per line, with the invocations that reach it, such as `CoreQuidemTest.test[1-3, 33]`.
+The numbers are the indexes JUnit gives the invocations, the ones a default display name shows in brackets.
 
 `cribro:pitest-diff` is not part of `test`, and a surviving mutant never fails the build. It costs one run of the target
 tests plus a partial run per mutant, so narrow `-Dcribro.pitestTargetTests` to the test classes that exercise the
