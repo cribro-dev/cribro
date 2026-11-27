@@ -15,17 +15,25 @@ which can differ from the directory: pgjdbc's `pgjdbc/` directory is `:postgresq
 ```text
 Diff coverage against origin/master (95aa87fb8), from :postgresql:test --tests *PgBufferedOutputStreamTest
   a filtered run leaves the rest of the change looking unexecuted
+  ordered by uncovered changed lines, then uncovered branches
 
   pgjdbc/src/main/java/org/postgresql/util/internal/PgBufferedOutputStream.java
     6/7 changed lines executed, 3/4 branches covered
     uncovered changed code:
       167: 1 of 2 branches covered: if (len < 0) {
       168: not executed: throw new IllegalArgumentException("len must be non-negative, got " + len);
+
+Total: 6/7 changed lines executed, 3/4 branches covered.
+Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch)
 ```
 
 Each uncovered line is a test you have not written yet, or a line you can justify leaving untested. The counts reflect
 only the tests that ran: after a run filtered with `--tests`, run the module's whole suite before you treat a line as
 untested. The whole report is in `<module>/build/reports/diff-coverage/test.txt`.
+
+The `Uncovered changed code` line counts the uncovered changed lines in two groups. A line that no test executed is in
+the first group, whether or not it has branches, so that group is the changed lines the total leaves unexecuted. A line
+that ran and left a branch outcome untaken is in the second.
 
 A changed line that holds only braces, closing parentheses, semicolons, commas, and `else`, such as `}`, `} else {`, or
 `});`, counts towards no total and is not listed. The instruction the compiler puts on such a line belongs to the
@@ -34,8 +42,10 @@ measured: the closing brace of a method or a lambda with an empty body, which ho
 that carries a branch. The block that follows the total leaves out the same lines. The mutation testing report leaves
 them out of its count of changed lines too, and counts such a line where a mutant is on it.
 
-If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It stays
-counted as uncovered and leaves the list of work.
+If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It leaves
+the list of work and stays in the counts, and the `Uncovered changed code` line ends with how many of the uncovered
+lines are acknowledged:
+`Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch), 1 of them acknowledged`.
 
 ### Unchanged code the change routes new inputs to
 

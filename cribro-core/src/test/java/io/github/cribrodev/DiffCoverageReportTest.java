@@ -282,7 +282,7 @@ class DiffCoverageReportTest {
               "      2: not executed: x();",
               "",
               "Total: 2/3 changed lines executed, 1/2 branches covered.",
-              "Uncovered changed code: 2 lines"),
+              "Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch)"),
           result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
     }
 
@@ -308,7 +308,7 @@ class DiffCoverageReportTest {
               "      4: not executed: x();",
               "",
               "Total: 0/2 changed lines executed.",
-              "Uncovered changed code: 2 lines"),
+              "Uncovered changed code: 2 lines (2 not executed, 0 with an untaken branch)"),
           result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
     }
 
@@ -439,7 +439,8 @@ class DiffCoverageReportTest {
               "      1: not executed: throw new AssertionError(); " + IGNORE,
               "",
               "Total: 0/1 changed lines executed.",
-              "Uncovered changed code: 1 line (1 acknowledged)"),
+              "Uncovered changed code: 1 line (1 not executed, 0 with an untaken branch), 1 of them"
+                  + " acknowledged"),
           result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
     }
 
@@ -527,7 +528,8 @@ class DiffCoverageReportTest {
               "      1: not executed: throw new AssertionError(); " + IGNORE,
               "",
               "Total: 0/2 changed lines executed.",
-              "Uncovered changed code: 2 lines (1 acknowledged)"),
+              "Uncovered changed code: 2 lines (2 not executed, 0 with an untaken branch), 1 of"
+                  + " them acknowledged"),
           result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
     }
 
@@ -552,8 +554,21 @@ class DiffCoverageReportTest {
           () -> assertFalse(rendered.contains("Acknowledged"), rendered),
           () ->
               assertEquals(
-                  "Uncovered changed code: 3 lines (1 acknowledged)",
+                  "Uncovered changed code: 3 lines (3 not executed, 0 with an untaken branch), 1 of"
+                      + " them acknowledged",
                   onlyLineStartingWith(rendered, "Uncovered changed code: ")));
+    }
+
+    @Test
+    void anAcknowledgedLineIsCountedInItsGroupAndAmongTheAcknowledged() throws IOException {
+      writeSource("Sample.java", "if (a) { " + IGNORE, "return 1;");
+      String rendered =
+          measure(List.of(changed(SAMPLE, 1, 2)), report(line(1, 4, 1, 1) + line(2, 0, 0, 0)))
+              .render(SCOPE, false, List.of(), Limits.NONE);
+      assertEquals(
+          "Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch), 1 of them"
+              + " acknowledged",
+          onlyLineStartingWith(rendered, "Uncovered changed code: "));
     }
 
     @Test
@@ -612,7 +627,7 @@ class DiffCoverageReportTest {
               "      3: not executed; 0 of 2 branches covered: if (b) {",
               "",
               "Total: 1/3 changed lines executed, 1/4 branches covered.",
-              "Uncovered changed code: 3 lines"),
+              "Uncovered changed code: 3 lines (2 not executed, 1 with an untaken branch)"),
           result.render(SCOPE, false, List.of(), Limits.NONE).lines().toList());
     }
 
@@ -634,7 +649,7 @@ class DiffCoverageReportTest {
                   "rows"),
           () ->
               assertEquals(
-                  "Uncovered changed code: 1 line",
+                  "Uncovered changed code: 1 line (1 not executed, 0 with an untaken branch)",
                   onlyLineStartingWith(rendered, "Uncovered changed code: ")));
     }
 
@@ -757,8 +772,17 @@ class DiffCoverageReportTest {
                   onlyLineStartingWith(rendered, "Total: ")),
           () ->
               assertEquals(
-                  "Uncovered changed code: 2 lines",
+                  "Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch)",
                   onlyLineStartingWith(rendered, "Uncovered changed code: ")));
+    }
+
+    @Test
+    void anExecutedLineWithAnUntakenBranchCountsInTheBranchGroupAlone() throws IOException {
+      DiffCoverageReport result = measure(List.of(changed(SAMPLE, 10)), report(line(10, 4, 1, 1)));
+      assertEquals(
+          "Uncovered changed code: 1 line (0 not executed, 1 with an untaken branch)",
+          onlyLineStartingWith(
+              result.render(SCOPE, false, List.of(), Limits.NONE), "Uncovered changed code: "));
     }
 
     @Test

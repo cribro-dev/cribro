@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** How much of a change a test run executed, file by file. */
 final class DiffCoverageReport {
@@ -353,11 +354,36 @@ final class DiffCoverageReport {
     return measured.stream().mapToInt(file -> file.executableLines).sum();
   }
 
-  /** Returns how many changed lines the run left unexecuted or took a branch of only one way. */
+  /**
+   * Returns how many changed lines the run left uncovered, acknowledged or not: the sum of {@link
+   * #notExecutedLines()} and {@link #untakenBranchLines()}.
+   */
   int uncoveredLines() {
+    return notExecutedLines() + untakenBranchLines();
+  }
+
+  /**
+   * Returns how many changed lines the run did not execute, acknowledged or not, which is the
+   * executable total less the executed one.
+   *
+   * <p>A line nothing ran counts here even where it has branches, since nothing took them either.
+   */
+  int notExecutedLines() {
+    return (int) uncoveredRows().filter(line -> !line.executed()).count();
+  }
+
+  /**
+   * Returns how many changed lines the run executed without taking every branch outcome,
+   * acknowledged or not.
+   */
+  int untakenBranchLines() {
+    return (int) uncoveredRows().filter(AffectedLine::executed).count();
+  }
+
+  /** Returns every uncovered changed line, whether it is work or acknowledged. */
+  private Stream<AffectedLine> uncoveredRows() {
     return measured.stream()
-        .mapToInt(file -> file.affected.size() + file.acknowledged.size())
-        .sum();
+        .flatMap(file -> Stream.concat(file.affected.stream(), file.acknowledged.stream()));
   }
 
   /** Returns how many of the uncovered lines a comment in the source acknowledges. */
@@ -430,12 +456,24 @@ final class DiffCoverageReport {
     appendBranches(out, coveredBranches(), totalBranches());
     out.append('.');
     // Every uncovered line counts here, printed or not: the executed share alone reports a line
-    // whose condition went one way as covered.
+    // whose condition went one way as covered. The two groups split the total, so a reader matches
+    // the not-executed group against the executed share and the other group against the branch
+    // pair. Acknowledged lines are counted in their group like any other, and the closing clause
+    // says how many of the total they are.
+    int uncovered = uncoveredLines();
     out.append("\nUncovered changed code: ")
-        .append(uncoveredLines())
-        .append(uncoveredLines() == 1 ? " line" : " lines");
+        .append(uncovered)
+        .append(uncovered == 1 ? " line" : " lines");
+    if (uncovered > 0) {
+      // Both groups are printed even at zero, so that the line keeps one shape between runs.
+      out.append(" (")
+          .append(notExecutedLines())
+          .append(" not executed, ")
+          .append(untakenBranchLines())
+          .append(" with an untaken branch)");
+    }
     if (acknowledgedLines() > 0) {
-      out.append(" (").append(acknowledgedLines()).append(" acknowledged)");
+      out.append(", ").append(acknowledgedLines()).append(" of them acknowledged");
     }
     return out.toString();
   }
