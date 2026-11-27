@@ -36,9 +36,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The plugin measures the directories of the main source set that hold Java or Kotlin sources,
- * puts the PIT plugins a build names on PIT's classpath, and replaces Gradle's bundled JaCoCo only
- * with a newer one, so the version comparison decides whether a build on a future Gradle is
- * downgraded.
+ * puts the PIT plugins a build names on PIT's classpath, runs PIT with the {@code STRONGER} mutator
+ * group where the build names none, and replaces Gradle's bundled JaCoCo only with a newer one, so
+ * the version comparison decides whether a build on a future Gradle is downgraded.
  */
 class CribroPluginTest {
 
@@ -178,6 +178,15 @@ class CribroPluginTest {
               "org.pitest:pitest-command-line:1.0"),
           requested(project));
     }
+  }
+
+  @Test
+  void pitestDiffUsesTheStrongerGroupWhereTheBuildNamesNone() throws IOException {
+    Project project = javaProject("");
+
+    assertEquals(
+        "STRONGER",
+        project.getTasks().named("pitestDiff", PitestDiffTask.class).get().getMutators().get());
   }
 
   @Test

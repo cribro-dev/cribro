@@ -17,6 +17,7 @@ package io.github.cribrodev.maven;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import io.github.cribrodev.PitestRun;
 import io.github.cribrodev.Versions;
 import java.io.File;
 import java.io.IOException;
@@ -60,14 +61,21 @@ public class GuideMojo extends AbstractMojo {
                 extClassPath,
                 System.getProperty("user.home")),
             modules,
-            Map.of(
-                "pitestVersion",
-                Versions.pitest(),
-                "pitestJunit5PluginVersion",
-                Versions.pitestJunit5Plugin(),
-                "jacocoVersion",
-                Versions.jacoco())));
+            values()));
     System.out.flush();
+  }
+
+  /** Returns the value of each {@code {{name}}} in the guide other than {@code {{mvn}}}. */
+  static Map<String, String> values() {
+    return Map.of(
+        "pitestVersion",
+        Versions.pitest(),
+        "pitestJunit5PluginVersion",
+        Versions.pitestJunit5Plugin(),
+        "pitestMutators",
+        PitestRun.DEFAULT_MUTATORS,
+        "jacocoVersion",
+        Versions.jacoco());
   }
 
   /**

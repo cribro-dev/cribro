@@ -117,7 +117,7 @@ public class PitestDiffMojo extends AbstractMojo {
   private String targetTests;
 
   /** The PIT mutator group: {@code DEFAULTS}, {@code STRONGER}, or {@code ALL}. */
-  @Parameter(property = "cribro.pitestMutators", defaultValue = "DEFAULTS")
+  @Parameter(property = "cribro.pitestMutators", defaultValue = PitestRun.DEFAULT_MUTATORS)
   private String mutators;
 
   /** Mutants analyzed in parallel; unset uses half the cores. */

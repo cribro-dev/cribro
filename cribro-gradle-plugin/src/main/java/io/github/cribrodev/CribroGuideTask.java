@@ -65,9 +65,15 @@ public abstract class CribroGuideTask extends DefaultTask {
                 getVersion().get(),
                 getGradleCommand().get(),
                 getProjectPaths().get(),
-                Map.of(
-                    "pitestVersion", CribroPlugin.pitestVersion(),
-                    "jacocoVersion", CribroPlugin.JACOCO_VERSION)));
+                values()));
+  }
+
+  /** Returns the value of each {@code {{name}}} in the guide other than {@code {{gradlew}}}. */
+  static Map<String, String> values() {
+    return Map.of(
+        "pitestVersion", CribroPlugin.pitestVersion(),
+        "pitestMutators", PitestRun.DEFAULT_MUTATORS,
+        "jacocoVersion", CribroPlugin.JACOCO_VERSION);
   }
 
   /**

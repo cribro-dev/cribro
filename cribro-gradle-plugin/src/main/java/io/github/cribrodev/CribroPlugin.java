@@ -391,7 +391,11 @@ public abstract class CribroPlugin implements Plugin<Project> {
                   .set(project.getLayout().getBuildDirectory().dir("reports/pitest-diff"));
               task.getRepositoryRoot().set(repositoryRoot);
               task.getTargetTests().set(providers.gradleProperty("cribro.pitestTargetTests"));
-              task.getMutators().set(providers.gradleProperty("cribro.pitestMutators").orElse("DEFAULTS"));
+              task.getMutators()
+                  .set(
+                      providers
+                          .gradleProperty("cribro.pitestMutators")
+                          .orElse(PitestRun.DEFAULT_MUTATORS));
               task.getThreads()
                   .set(
                       intProperty(

@@ -66,6 +66,11 @@ class PitestRunTest {
   }
 
   @Test
+  void aRunThatNamesNoMutatorsUsesTheStrongerGroup() throws IOException {
+    assertEquals("STRONGER", option(arguments(List.of()), "mutators"));
+  }
+
+  @Test
   void aRunWithNoTestGlobNamesEveryTestByARegularExpression() throws IOException {
     assertEquals(
         "~.*",

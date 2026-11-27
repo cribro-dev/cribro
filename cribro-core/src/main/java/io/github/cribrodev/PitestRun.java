@@ -63,6 +63,16 @@ public final class PitestRun {
    */
   public static final String ALL_TESTS = "~.*";
 
+  /**
+   * The PIT mutator group a run uses where the build names none.
+   *
+   * <p>{@code STRONGER} adds to {@code DEFAULTS} a mutator of switch statements and the mutators
+   * that replace an equality or ordering check with {@code true}; a test kills one of the latter
+   * only by running the check where it is false. PIT mutates only the changed lines, so the extra
+   * mutants add little to the run.
+   */
+  public static final String DEFAULT_MUTATORS = "STRONGER";
+
   private List<String> targetClasses = List.of();
   private File reportDir;
   private File changedLines;
@@ -72,7 +82,7 @@ public final class PitestRun {
   private List<File> sourceDirs = List.of();
   private List<File> classPath = List.of();
   private String jvmArgs = "";
-  private String mutators = "DEFAULTS";
+  private String mutators = DEFAULT_MUTATORS;
   private int threads = 1;
   private int timeoutConst = 4000;
   private final Map<String, String> extraOptions = new LinkedHashMap<>();

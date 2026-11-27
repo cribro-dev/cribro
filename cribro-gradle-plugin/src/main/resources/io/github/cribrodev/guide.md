@@ -90,7 +90,7 @@ stacked change, pass the parent branch: `-Pcribro.diffBase=<parent>`.
 | `-Pcribro.diffCoverageShowAll` | off | Prints the whole coverage report to the console |
 | `-Pcribro.diffCoverageMaxFiles=<n>`, `-Pcribro.diffCoverageMaxLinesPerFile=<n>`, `-Pcribro.diffCoverageMaxLines=<n>` | `10`, `10`, `50` | How much of the coverage report the console shows |
 | `-Pcribro.pitestTargetTests=<globs>` | every test (`~.*`) | Tests allowed to kill a mutant |
-| `-Pcribro.pitestMutators=<group>` | `DEFAULTS` | PIT mutator group: `DEFAULTS`, `STRONGER`, or `ALL` |
+| `-Pcribro.pitestMutators=<group>` | `{{pitestMutators}}` | PIT mutator group: `DEFAULTS`, `STRONGER`, or `ALL` |
 | `-Pcribro.pitestThreads=<n>` | half the cores | Mutants analyzed in parallel |
 | `-Pcribro.pitestTimeoutConst=<ms>` | `4000` | Time PIT adds to a test's normal run before it calls a mutant a timeout |
 | `-Pcribro.pitestShowAll` | off | Prints the whole mutation report to the console |
