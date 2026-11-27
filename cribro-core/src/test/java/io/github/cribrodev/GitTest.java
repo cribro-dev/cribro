@@ -25,6 +25,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -111,6 +114,37 @@ class GitTest {
   }
 
   @Test
+  void gitRunsWithTheEnvironmentTheInstanceWasGiven() throws Exception {
+    repositoryWithOneCommit();
+    Map<String, String> environment = new HashMap<>(System.getenv());
+    environment.put("GIT_INDEX_FILE", directory.resolve("absent-index").toString());
+
+    assertEquals(
+        "seed.txt",
+        new Git(directory.toFile(), environment).output("ls-files", "--others"),
+        "untracked files, read through an index file that does not exist");
+  }
+
+  @Test
+  void gitGetsTheEnvironmentOfThisProcessByDefault() throws Exception {
+    repositoryWithOneCommit();
+    String name = inheritedVariable();
+
+    assertEquals(
+        System.getenv(name), valueGitSees(new Git(directory.toFile()), name), "$" + name + " in git");
+  }
+
+  @Test
+  void aVariableMissingFromTheGivenEnvironmentIsUnsetForGit() throws Exception {
+    repositoryWithOneCommit();
+    String name = inheritedVariable();
+    Map<String, String> environment = new HashMap<>(System.getenv());
+    environment.remove(name);
+
+    assertNull(valueGitSees(new Git(directory.toFile(), environment), name), "$" + name + " in git");
+  }
+
+  @Test
   void aFailedCommandKeepsFailingForTheLifeOfTheInstance() throws Exception {
     repositoryWithOneCommit();
     Git git = new Git(directory.toFile());
@@ -191,6 +225,30 @@ class GitTest {
 
   private void commit(String message) throws Exception {
     repository.commit(message);
+  }
+
+  /**
+   * Returns a variable of this process that git and the shell it starts an alias in can run
+   * without.
+   */
+  private static String inheritedVariable() {
+    return System.getenv().keySet().stream()
+        .filter(name -> !name.equalsIgnoreCase("PATH") && !name.equalsIgnoreCase("SYSTEMROOT"))
+        .filter(name -> !name.toUpperCase(Locale.ROOT).startsWith("GIT_"))
+        .sorted()
+        .findFirst()
+        .orElseThrow();
+  }
+
+  /** Returns the value of a variable in the environment git runs with, or null where it is unset. */
+  private static String valueGitSees(Git git, String name) {
+    String prefix = name + "=";
+    return git.output("-c", "alias.printenv=!env", "printenv")
+        .lines()
+        .filter(line -> line.startsWith(prefix))
+        .map(line -> line.substring(prefix.length()))
+        .findFirst()
+        .orElse(null);
   }
 
   /** Returns the commit HEAD names now, read outside the instance so no cache stands between. */
