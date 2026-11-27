@@ -16,6 +16,7 @@
 package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -28,6 +29,7 @@ import org.gradle.api.Project;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.testfixtures.ProjectBuilder;
+import org.gradle.testing.jacoco.plugins.JacocoPlugin;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -197,5 +199,16 @@ class CribroPluginTest {
   @Test
   void aNewerBundledVersionIsKept() {
     assertTrue(CribroPlugin.compareVersions("0.9.1", "0.8.16") > 0);
+  }
+
+  @Test
+  void aGradleWithNoBundledJacocoFieldGivesNoVersion() {
+    assertNull(CribroPlugin.bundledJacocoVersion(Object.class));
+  }
+
+  @Test
+  void theBundledJacocoVersionIsTheFieldOfTheGradleThatRuns() {
+    assertEquals(
+        JacocoPlugin.DEFAULT_JACOCO_VERSION, CribroPlugin.bundledJacocoVersion(JacocoPlugin.class));
   }
 }
