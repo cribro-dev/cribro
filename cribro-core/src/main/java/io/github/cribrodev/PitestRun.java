@@ -252,25 +252,34 @@ public final class PitestRun {
   }
 
   /**
-   * Returns the line naming the JVM arguments PIT ran the tests without, or null where there are
-   * none.
+   * Returns the lines naming the JVM arguments PIT ran the tests without, one line per reason, or
+   * null where there are none.
    *
+   * @param leftOut the arguments keyed by why they are left out, such as {@link
+   *     PitestJvmArgs#leftOutByReason()} returns
    * @param source what the arguments came from, such as {@code the test task}
    */
-  public static String leftOutMessage(List<String> leftOut, String source) {
+  public static String leftOutMessage(Map<String, List<String>> leftOut, String source) {
     if (leftOut.isEmpty()) {
       return null;
     }
-    return "PIT ran the tests without these JVM arguments of "
-        + source
-        + ", since it splits arguments at commas and whitespace: "
-        + String.join(" ", leftOut);
+    return leftOut.entrySet().stream()
+        .map(
+            reason ->
+                "PIT ran the tests without these JVM arguments of "
+                    + source
+                    + ", since "
+                    + reason.getKey()
+                    + ": "
+                    + String.join(" ", reason.getValue()))
+        .collect(Collectors.joining("\n"));
   }
 
   /**
    * Returns the message of a PIT run that failed: its exit code and the end of {@link #LOG}.
    *
-   * @param leftOut the line {@link #leftOutMessage} returned, or null
+   * @param leftOut the lines naming the arguments left out, such as {@link #leftOutMessage}
+   *     returns, or null
    */
   public static String failureMessage(int exitCode, File repository, File log, String leftOut)
       throws IOException {

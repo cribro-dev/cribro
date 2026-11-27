@@ -368,7 +368,7 @@ public abstract class CribroPlugin implements Plugin<Project> {
                   providers.provider(
                       () -> PitestJvmArgs.of(t.getJvmArgs(), t.getSystemProperties(), t.getMaxHeapSize()));
               task.getTestJvmArgs().set(jvmArgs.map(PitestJvmArgs::value));
-              task.getLeftOutJvmArgs().set(jvmArgs.map(PitestJvmArgs::leftOut));
+              task.getLeftOutJvmArgs().set(jvmArgs.map(PitestJvmArgs::leftOutByReason));
               // PIT runs the tests on the JVM the `test` task runs them on.
               task.getJavaLauncher().set(t.getJavaLauncher());
               task.getPitestClasspath().from(pitest);

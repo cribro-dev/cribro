@@ -17,6 +17,7 @@ junit-bom = "org.junit:junit-bom:5.14.4"
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 pitest-entry = { module = "org.pitest:pitest-entry", version.ref = "pitest" }
+pitest-command-line = { module = "org.pitest:pitest-command-line", version.ref = "pitest" }
 jacoco-agent = { module = "org.jacoco:org.jacoco.agent", version.ref = "jacoco" }
 jacoco-core = { module = "org.jacoco:org.jacoco.core", version.ref = "jacoco" }
 jacoco-report = { module = "org.jacoco:org.jacoco.report", version.ref = "jacoco" }

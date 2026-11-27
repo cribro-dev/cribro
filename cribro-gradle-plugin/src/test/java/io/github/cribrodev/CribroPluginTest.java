@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.gradle.api.Project;
 import org.gradle.api.tasks.SourceSet;
@@ -187,6 +188,25 @@ class CribroPluginTest {
     assertEquals(
         "STRONGER",
         project.getTasks().named("pitestDiff", PitestDiffTask.class).get().getMutators().get());
+  }
+
+  @Test
+  void pitestDiffGetsTheTestTasksLeftOutArgumentsWithTheirReasons() throws IOException {
+    Project project = javaProject("");
+    project
+        .getTasks()
+        .named("test", org.gradle.api.tasks.testing.Test.class)
+        .get()
+        .jvmArgs("-Dq=a b");
+
+    assertEquals(
+        Map.of(PitestJvmArgs.ARGUMENT_FILE, List.of("-Dq=a b")),
+        project
+            .getTasks()
+            .named("pitestDiff", PitestDiffTask.class)
+            .get()
+            .getLeftOutJvmArgs()
+            .get());
   }
 
   @Test

@@ -30,7 +30,7 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.FileSystemOperations;
 import org.gradle.api.file.RegularFileProperty;
-import org.gradle.api.provider.ListProperty;
+import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
@@ -90,9 +90,12 @@ public abstract class PitestDiffTask extends DefaultTask {
   @Input
   public abstract Property<String> getTestJvmArgs();
 
-  /** The test task's JVM arguments that PIT cannot pass, which the console output names. */
+  /**
+   * The test task's JVM arguments that PIT cannot pass, keyed by why, which the console output
+   * names.
+   */
   @Input
-  public abstract ListProperty<String> getLeftOutJvmArgs();
+  public abstract MapProperty<String, List<String>> getLeftOutJvmArgs();
 
   /** A PIT glob for the tests allowed to kill a mutant; unset, every test is. */
   @Input

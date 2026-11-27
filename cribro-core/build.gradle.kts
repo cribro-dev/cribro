@@ -11,6 +11,8 @@ dependencies {
     // PIT supplies these classes when it loads the interceptor; the jar has no runtime dependency.
     compileOnly(libs.pitest.entry)
     testImplementation(libs.pitest.entry)
+    // The tests split --jvmArgs with PIT's own parser.
+    testImplementation(libs.pitest.command.line)
 }
 
 // The plugins read these at run time, and the Gradle plugin's jar carries this file with the classes.

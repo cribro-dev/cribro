@@ -127,8 +127,10 @@ it, and it needs an Arcmutate licence file, `arcmutate-licence.txt`, at the repo
   reads that agent's file.
 - Only surefire's `default-test` execution is measured; failsafe and other surefire executions are not.
 - A module whose tests run in Maven's own JVM (`forkCount=0`) records no coverage, and the report says so.
-- PIT splits JVM arguments at commas and whitespace. The goal leaves such arguments out and names them in its output;
-  a test that depends on one may fail under PIT and drop out.
+- PIT cannot pass a JVM argument that contains whitespace, a quote, or a `#`, nor one that leaves a `{` open,
+  nor one with a comma when it has a brace, or when another argument PIT passes has one.
+  The goal leaves such arguments out and names them in its output; a test that depends on one may fail under PIT and
+  drop out.
 - PIT runs JUnit Jupiter tests one at a time, whatever surefire sets for parallel execution.
 - `cribro:pitest-diff` has no overall time limit, and surefire's `forkedProcessTimeoutInSeconds` does not bound it. A
   test that hangs before any mutant runs keeps PIT waiting until the build is stopped; `cribro.pitestTimeoutConst`

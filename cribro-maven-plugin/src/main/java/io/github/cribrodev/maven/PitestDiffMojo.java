@@ -100,6 +100,9 @@ import org.eclipse.aether.util.filter.DependencyFilterUtils;
     threadSafe = true)
 public class PitestDiffMojo extends AbstractMojo {
 
+  /** The surefire execution whose configuration PIT runs the tests with, as messages name it. */
+  private static final String DEFAULT_TEST = "surefire's default-test";
+
   @Parameter(defaultValue = "${project}", readonly = true)
   private MavenProject project;
 
@@ -285,9 +288,7 @@ public class PitestDiffMojo extends AbstractMojo {
             systemProperties(
                 surefire, session.getUserProperties(), project.getBasedir(), localRepository()),
             null);
-    List<String> leftOut = new ArrayList<>(unresolved);
-    leftOut.addAll(jvmArgs.leftOut());
-    String leftOutMessage = PitestRun.leftOutMessage(leftOut, "surefire's default-test");
+    String leftOutMessage = leftOutMessage(unresolved, jvmArgs.leftOutByReason());
 
     PitestRun pit =
         new PitestRun()
@@ -491,6 +492,23 @@ public class PitestDiffMojo extends AbstractMojo {
       }
     }
     return arguments;
+  }
+
+  /**
+   * Returns the lines naming the JVM arguments of surefire's default-test that PIT ran the tests
+   * without, one line per reason, or null where there are none.
+   *
+   * @param unresolved the arguments with an {@code @{name}} the project does not define
+   * @param split the other arguments PIT cannot pass whole, keyed by why, as {@link
+   *     PitestJvmArgs#leftOutByReason()} returns them
+   */
+  static String leftOutMessage(List<String> unresolved, Map<String, List<String>> split) {
+    Map<String, List<String>> leftOut = new LinkedHashMap<>();
+    if (!unresolved.isEmpty()) {
+      leftOut.put("they name an @{property} the project does not define", unresolved);
+    }
+    leftOut.putAll(split);
+    return PitestRun.leftOutMessage(leftOut, DEFAULT_TEST);
   }
 
   /**

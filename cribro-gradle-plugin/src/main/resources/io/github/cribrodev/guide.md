@@ -111,8 +111,10 @@ it, and it needs an Arcmutate licence file, `arcmutate-licence.txt`, at the repo
 
 - PIT runs only the tests of the module whose code it mutates. A mutant that only another module's tests kill is
   reported as surviving.
-- PIT splits JVM arguments at commas and whitespace. The task leaves such arguments of the test task out and names them
-  in its output; a test that depends on one may fail under PIT and drop out.
+- PIT cannot pass a JVM argument that contains whitespace, a quote, or a `#`, nor one that leaves a `{` open,
+  nor one with a comma when it has a brace, or when another argument PIT passes has one.
+  The task leaves such arguments of the test task out and names them in its output; a test that depends on one may fail
+  under PIT and drop out.
 - PIT runs JUnit Jupiter tests one at a time, whatever the build sets for parallel execution.
 - PIT runs only the `test` task's tests, not those of other `Test` tasks such as integration tests.
 - Do not run two Gradle builds in the same project at once.

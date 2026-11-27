@@ -66,6 +66,22 @@ class PitestDiffMojoTest {
 
   @TempDir Path testClasses;
 
+  @Test
+  void anArgumentWithAnUndefinedPropertyIsNamedApartFromTheSplitOnes() {
+    assertEquals(
+        "PIT ran the tests without these JVM arguments of surefire's default-test, since they name"
+            + " an @{property} the project does not define: @{absent}\n"
+            + "PIT ran the tests without these JVM arguments of surefire's default-test, since PIT"
+            + " splits them: -Da=b,{c}",
+        PitestDiffMojo.leftOutMessage(
+            List.of("@{absent}"), Map.of("PIT splits them", List.of("-Da=b,{c}"))));
+  }
+
+  @Test
+  void noArgumentLeftOutNeedsNoLine() {
+    assertNull(PitestDiffMojo.leftOutMessage(List.of(), Map.of()));
+  }
+
   /** The default is read from the plugin descriptor, which is where Maven reads it. */
   @Test
   void aBuildThatNamesNoMutatorsGetsTheStrongerGroup() throws Exception {
