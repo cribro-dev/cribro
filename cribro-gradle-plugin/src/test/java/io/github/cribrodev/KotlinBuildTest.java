@@ -25,6 +25,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 import org.junit.jupiter.api.Test;
@@ -47,8 +49,9 @@ class KotlinBuildTest {
 
   /**
    * Writes a one-file Kotlin build whose only test covers one branch of {@code max} and never calls
-   * {@code next}. The file lies at the root of {@code src/main/kotlin} and declares a package, so
-   * its directory does not follow it.
+   * {@code next} or {@code log}. The file lies at the root of {@code src/main/kotlin} and declares a
+   * package, so its directory does not follow it. The closing brace of {@code log} carries the
+   * method's return instruction and holds no code.
    */
   private void writeBuild() throws IOException {
     Files.writeString(
@@ -84,6 +87,10 @@ class KotlinBuildTest {
 
         fun next(a: Int): Int {
             return a + 1
+        }
+
+        fun log(a: Int) {
+            println(a)
         }
         """);
     write(
@@ -142,12 +149,27 @@ class KotlinBuildTest {
     String output = result.getOutput();
     assertAll(
         () -> assertContains(output, "  src/main/kotlin/Calc.kt\n    "),
-        () -> assertContains(output, "    2/4 changed lines executed, 1/2 branches covered"),
+        () -> assertContains(output, "    2/5 changed lines executed, 1/2 branches covered"),
         () -> assertContains(output, "      4: 1 of 2 branches covered: if (a > b) {"),
         () -> assertContains(output, "      7: not executed: return b"),
         () -> assertContains(output, "      11: not executed: return a + 1"),
+        () -> assertContains(output, "      15: not executed: println(a)"),
+        () -> assertContains(output, " of 5 changed lines: "),
+        () ->
+            assertEquals(
+                number(output, "Total: \\d+/(\\d+) changed lines executed"),
+                number(output, "mutants? on \\d+ of (\\d+) changed lines: "),
+                "changed lines in the mutation summary, which has to leave out the brace lines that"
+                    + " the diff coverage total leaves out"),
         () -> assertContains(output, "survived: changed conditional boundary, in max"),
         () -> assertContains(output, "no test reaches it: Replaced integer addition with subtraction, in next"));
+  }
+
+  /** Returns the number the first group of {@code regex} captures in the output. */
+  private static int number(String output, String regex) {
+    Matcher matcher = Pattern.compile(regex).matcher(output);
+    assertTrue(matcher.find(), () -> "expected a match of " + regex + " in:\n" + output);
+    return Integer.parseInt(matcher.group(1));
   }
 
   private static void assertContains(String output, String expected) {

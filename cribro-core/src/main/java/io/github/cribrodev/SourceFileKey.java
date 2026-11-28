@@ -101,15 +101,20 @@ public final class SourceFileKey {
    * <p>Only comments and annotations, Java package annotations and Kotlin file annotations alike,
    * may precede the declaration, and in Kotlin a {@code #!} line before them, so the text is
    * scanned rather than searched: a string literal or a comment further down that spells {@code
-   * package} names no package. A text declares none only where the scan ends at the end of the
-   * text, at an empty declaration {@code ;}, or at an identifier other than {@code package}, such
-   * as {@code import} or {@code class}; any other character there leaves the declaration unread.
+   * package} names no package. The scan splits the text into tokens by the rules of the language,
+   * so a quote, a bracket, or a comment opener inside a literal or a comment ends nothing. A text
+   * declares none only where the scan ends at the end of the text, at an empty declaration {@code
+   * ;}, or at an identifier other than {@code package}, such as {@code import} or {@code class};
+   * any other character there leaves the declaration unread.
    *
-   * @param kotlin whether the text is Kotlin, which may open with a {@code #!} line and whose block
-   *     comments nest, so that a comment holding another ends at the matching close rather than the
-   *     first
+   * @param kotlin whether the text is Kotlin, which may open with a {@code #!} line, whose block
+   *     comments nest, and whose strings hold templates; a Java text is scanned after its Unicode
+   *     escapes are replaced, as javac reads it
    */
   static String declaredPackage(String text, boolean kotlin) {
+    if (!kotlin) {
+      text = translateUnicodeEscapes(text);
+    }
     int at = text.startsWith("﻿") ? 1 : 0;
     if (kotlin && text.startsWith("#!", at)) {
       at = skipLineComment(text, at);
@@ -122,60 +127,70 @@ public final class SourceFileKey {
       return "";
     }
     if (!text.startsWith("package", at)) {
-      char c = text.charAt(at);
+      int c = text.codePointAt(at);
       return Character.isJavaIdentifierStart(c) || c == ';' ? "" : null;
     }
     at += "package".length();
-    if (at < text.length() && Character.isJavaIdentifierPart(text.charAt(at))) {
+    if (at < text.length() && Character.isJavaIdentifierPart(text.codePointAt(at))) {
       return "";
     }
     StringBuilder name = new StringBuilder();
-    while (true) {
-      at = skipSpaceAndComments(text, at, kotlin);
-      if (at < 0 || at >= text.length()) {
-        return null;
-      }
-      int start = at;
-      if (text.charAt(at) == '`') {
-        int end = text.indexOf('`', at + 1);
-        if (end < 0) {
-          return null;
+    at = skipQualifiedName(text, skipSpaceAndComments(text, at, kotlin), kotlin, name);
+    return at < 0 ? null : name.toString();
+  }
+
+  /**
+   * Returns the text with each Unicode escape replaced by the character it stands for, as javac
+   * reads a source before it splits it into tokens (JLS §3.3). A backslash begins an escape only
+   * where an even number of backslashes precede it, and a character an escape produces begins
+   * none. A backslash and {@code u} that no four hexadecimal digits follow stay as they are.
+   */
+  private static String translateUnicodeEscapes(String text) {
+    StringBuilder out = new StringBuilder(text.length());
+    int backslashes = 0;
+    int at = 0;
+    while (at < text.length()) {
+      char c = text.charAt(at);
+      if (c == '\\' && backslashes % 2 == 0) {
+        int digits = at + 1;
+        while (digits < text.length() && text.charAt(digits) == 'u') {
+          digits++;
         }
-        name.append(text, at + 1, end);
-        at = end + 1;
-      } else {
-        if (!Character.isJavaIdentifierStart(text.charAt(at))) {
-          return null;
+        if (digits > at + 1 && isHex(text, digits, digits + 4)) {
+          out.append((char) Integer.parseInt(text, digits, digits + 4, 16));
+          at = digits + 4;
+          backslashes = 0;
+          continue;
         }
-        while (at < text.length() && Character.isJavaIdentifierPart(text.charAt(at))) {
-          at++;
-        }
-        name.append(text, start, at);
       }
-      at = skipSpaceAndComments(text, at, kotlin);
-      if (at < 0) {
-        return null;
-      }
-      if (at < text.length() && text.charAt(at) == '.') {
-        name.append('.');
-        at++;
-        continue;
-      }
-      return name.toString();
+      backslashes = c == '\\' ? backslashes + 1 : 0;
+      out.append(c);
+      at++;
     }
+    return out.toString();
+  }
+
+  /** Returns whether the text holds ASCII hexadecimal digits from {@code from} to {@code to}. */
+  private static boolean isHex(String text, int from, int to) {
+    if (to > text.length()) {
+      return false;
+    }
+    for (int at = from; at < to; at++) {
+      if ("0123456789abcdefABCDEF".indexOf(text.charAt(at)) < 0) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
    * Returns the index of the first character after the whitespace, comments, and annotations at
    * {@code at}, or -1 where one of them never ends.
-   *
-   * @param nestedComments whether a block comment may hold another, as in Kotlin
    */
-  private static int skipSpaceCommentsAndAnnotations(
-      String text, int at, boolean nestedComments) {
-    at = skipSpaceAndComments(text, at, nestedComments);
+  private static int skipSpaceCommentsAndAnnotations(String text, int at, boolean kotlin) {
+    at = skipSpaceAndComments(text, at, kotlin);
     while (at >= 0 && at < text.length() && text.charAt(at) == '@') {
-      at = skipSpaceAndComments(text, skipAnnotation(text, at + 1, nestedComments), nestedComments);
+      at = skipSpaceAndComments(text, skipAnnotation(text, at + 1, kotlin), kotlin);
     }
     return at;
   }
@@ -183,6 +198,8 @@ public final class SourceFileKey {
   /**
    * Returns the index of the first character after the whitespace and comments at {@code at}, or -1
    * where {@code at} is -1 or a comment never ends.
+   *
+   * @param nestedComments whether a block comment may hold another, as in Kotlin
    */
   private static int skipSpaceAndComments(String text, int at, boolean nestedComments) {
     while (at >= 0 && at < text.length()) {
@@ -235,108 +252,201 @@ public final class SourceFileKey {
   }
 
   /**
-   * Returns the index after the annotation whose name starts at {@code at}, or -1 where a comment
-   * or the arguments never end: a Kotlin use-site target such as {@code file:}, a qualified name,
-   * and the arguments in parentheses or, for a Kotlin annotation list, in brackets. Whitespace and
-   * comments may stand between these parts.
+   * Returns the index after the annotation whose name starts at {@code at}, or -1 where a comment,
+   * the name, or the arguments never end: a Kotlin use-site target such as {@code file:}, a
+   * qualified name, Kotlin type arguments in angle brackets, and the arguments in parentheses or,
+   * for a Kotlin annotation list, the annotations in brackets. Whitespace and comments may stand
+   * between these parts and around each dot of the name.
    */
-  private static int skipAnnotation(String text, int at, boolean nestedComments) {
-    at = skipSpaceAndComments(text, at, nestedComments);
-    while (at >= 0) {
-      while (at < text.length()
-          && (Character.isJavaIdentifierPart(text.charAt(at)) || text.charAt(at) == '.')) {
-        at++;
+  private static int skipAnnotation(String text, int at, boolean kotlin) {
+    at = skipSpaceAndComments(text, at, kotlin);
+    while (at >= 0 && at < text.length()) {
+      if (text.charAt(at) == '[') {
+        return skipBalanced(text, at, '[', ']', kotlin);
       }
-      int next = skipSpaceAndComments(text, at, nestedComments);
+      int end = skipQualifiedName(text, at, kotlin, null);
+      int next = skipSpaceAndComments(text, end, kotlin);
+      if (kotlin && next >= 0 && next < text.length() && text.charAt(next) == '<') {
+        end = skipTypeArguments(text, next);
+        next = skipSpaceAndComments(text, end, true);
+      }
       if (next < 0) {
         return -1;
       }
-      if (next >= text.length()) {
-        return at;
-      }
-      char c = text.charAt(next);
-      if (c == ':') {
-        at = skipSpaceAndComments(text, next + 1, nestedComments);
+      if (next < text.length() && text.charAt(next) == ':') {
+        at = skipSpaceAndComments(text, next + 1, kotlin);
         continue;
       }
-      if (c == '(') {
-        return skipBalanced(text, next, '(', ')', nestedComments);
+      if (next < text.length() && text.charAt(next) == '(') {
+        return skipBalanced(text, next, '(', ')', kotlin);
       }
-      if (c == '[') {
-        return skipBalanced(text, next, '[', ']', nestedComments);
+      return end;
+    }
+    return at;
+  }
+
+  /**
+   * Returns the index after the Kotlin type arguments that open at {@code at}, or -1 where the
+   * angle brackets never close. The {@code >} of a function type's {@code ->} closes none, and a
+   * comment between them is skipped.
+   */
+  private static int skipTypeArguments(String text, int at) {
+    int depth = 0;
+    while (at >= 0 && at < text.length()) {
+      char c = text.charAt(at);
+      if (text.startsWith("//", at)) {
+        at = skipLineComment(text, at);
+      } else if (text.startsWith("/*", at)) {
+        at = skipBlockComment(text, at, true);
+      } else if (text.startsWith("->", at)) {
+        at += 2;
+      } else {
+        if (c == '<') {
+          depth++;
+        } else if (c == '>' && --depth == 0) {
+          return at + 1;
+        }
+        at++;
       }
-      return at;
     }
     return -1;
+  }
+
+  /**
+   * Returns the index after the qualified name at {@code at}, or -1 where {@code at} is -1, no
+   * identifier starts there or after a dot, or a comment or a backticked identifier never ends.
+   * Whitespace and comments may stand around each dot.
+   *
+   * @param name receives the identifiers joined by dots, without backticks; null where only the end
+   *     of the name matters
+   */
+  private static int skipQualifiedName(
+      String text, int at, boolean kotlin, StringBuilder name) {
+    while (true) {
+      int end = skipIdentifier(text, at);
+      if (end <= at) {
+        return -1;
+      }
+      if (name != null) {
+        boolean backticked = text.charAt(at) == '`';
+        name.append(text, backticked ? at + 1 : at, backticked ? end - 1 : end);
+      }
+      int dot = skipSpaceAndComments(text, end, kotlin);
+      if (dot < 0) {
+        return -1;
+      }
+      if (dot >= text.length() || text.charAt(dot) != '.') {
+        return end;
+      }
+      if (name != null) {
+        name.append('.');
+      }
+      at = skipSpaceAndComments(text, dot + 1, kotlin);
+    }
+  }
+
+  /**
+   * Returns the index after the identifier or the backticked name at {@code at}: {@code at} itself
+   * where neither starts there, and -1 where {@code at} is -1 or the backticks never close.
+   */
+  private static int skipIdentifier(String text, int at) {
+    if (at < 0 || at >= text.length()) {
+      return at;
+    }
+    if (text.charAt(at) == '`') {
+      int close = text.indexOf('`', at + 1);
+      return close < 0 ? -1 : close + 1;
+    }
+    int end = at;
+    while (end < text.length()) {
+      int c = text.codePointAt(end);
+      if (end == at ? !Character.isJavaIdentifierStart(c) : !Character.isJavaIdentifierPart(c)) {
+        break;
+      }
+      end += Character.charCount(c);
+    }
+    return end;
   }
 
   /**
    * Returns the index after the bracket that closes the one at {@code at}, or -1 where none does.
-   * A comment or a string or character literal between them is skipped, so a bracket in it does
-   * not count.
+   * A comment, a string or character literal, or a Kotlin identifier in backticks between them is
+   * skipped, so a bracket in it does not count.
    */
-  private static int skipBalanced(
-      String text, int at, char open, char close, boolean nestedComments) {
+  private static int skipBalanced(String text, int at, char open, char close, boolean kotlin) {
     int depth = 0;
-    while (at < text.length()) {
+    int dollars = 0;
+    while (at >= 0 && at < text.length()) {
       char c = text.charAt(at);
-      if (c == open) {
-        depth++;
-      } else if (c == close) {
-        depth--;
-        if (depth == 0) {
+      if (text.startsWith("//", at)) {
+        at = skipLineComment(text, at);
+      } else if (text.startsWith("/*", at)) {
+        at = skipBlockComment(text, at, kotlin);
+      } else if (c == '"' || c == '\'') {
+        at = skipLiteral(text, at, kotlin, dollars);
+      } else if (kotlin && c == '`') {
+        at = skipIdentifier(text, at);
+      } else {
+        if (c == open) {
+          depth++;
+        } else if (c == close && --depth == 0) {
           return at + 1;
         }
-      } else if (text.startsWith("//", at)) {
-        at = skipLineComment(text, at);
-        continue;
-      } else if (text.startsWith("/*", at)) {
-        at = skipBlockComment(text, at, nestedComments);
-        if (at < 0) {
-          return -1;
-        }
-        continue;
-      } else if (c == '"' || c == '\'') {
-        at = skipLiteral(text, at);
-        if (at < 0) {
-          return -1;
-        }
-        continue;
+        at++;
       }
-      at++;
+      dollars = c == '$' ? dollars + 1 : 0;
     }
     return -1;
   }
 
   /**
-   * Returns the index after the literal that opens at {@code at}, or -1 where it never closes. A
-   * Kotlin raw string ends at the last quote of the first run of three or more, so the quotes
-   * before the last three belong to its text.
+   * Returns the index after the literal that opens at {@code at}, or -1 where it never closes.
+   *
+   * <p>A backslash escapes the character after it, except in a Kotlin raw string. A Java text block
+   * or a Kotlin raw string ends at the last quote of the first run of three or more unescaped
+   * quotes. In a Kotlin raw string, the quotes before the last three of that run belong to the
+   * string. A Java source that compiles has no quote right after the closing delimiter of a text
+   * block, so ending a text block at the last quote of the run reads every such source. In a
+   * Kotlin string, a brace right after at least as many dollar signs as stand before the opening
+   * quote, and at least one, opens a template, which ends at the matching brace and may hold
+   * literals and comments of its own.
+   *
+   * @param dollars the number of dollar signs right before the opening quote, the template prefix
+   *     of a Kotlin string
    */
-  private static int skipLiteral(String text, int at) {
+  private static int skipLiteral(String text, int at, boolean kotlin, int dollars) {
     char quote = text.charAt(at);
-    if (quote == '"' && text.startsWith("\"\"\"", at)) {
-      int end = text.indexOf("\"\"\"", at + 3);
-      if (end < 0) {
-        return -1;
-      }
-      end += 3;
-      while (end < text.length() && text.charAt(end) == '"') {
-        end++;
-      }
-      return end;
-    }
-    at++;
+    boolean multiline = quote == '"' && text.startsWith("\"\"\"", at);
+    boolean escapes = !(kotlin && multiline);
+    boolean templates = kotlin && quote == '"';
+    int prefix = Math.max(1, dollars);
+    int run = 0;
+    at += multiline ? 3 : 1;
     while (at < text.length()) {
       char c = text.charAt(at);
-      if (c == '\\') {
-        at += 2;
-        continue;
+      if (multiline && text.startsWith("\"\"\"", at)) {
+        at += 3;
+        while (at < text.length() && text.charAt(at) == '"') {
+          at++;
+        }
+        return at;
       }
-      if (c == quote) {
+      if (!multiline && c == quote) {
         return at + 1;
       }
-      at++;
+      if (c == '\\' && escapes) {
+        at += 2;
+        run = 0;
+      } else if (c == '{' && templates && run >= prefix) {
+        at = skipBalanced(text, at, '{', '}', true);
+        if (at < 0) {
+          return -1;
+        }
+        run = 0;
+      } else {
+        run = c == '$' ? run + 1 : 0;
+        at++;
+      }
     }
     return -1;
   }

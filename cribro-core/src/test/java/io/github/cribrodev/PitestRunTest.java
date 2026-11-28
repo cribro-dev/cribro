@@ -17,6 +17,7 @@ package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertLinesMatch;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.File;
@@ -25,6 +26,7 @@ import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -63,6 +65,37 @@ class PitestRunTest {
   @Test
   void pitLeavesItsOwnLaunchClasspathOffTheTestsClasspath() throws IOException {
     assertEquals("false", option(arguments(List.of()), "includeLaunchClasspath"));
+  }
+
+  @Test
+  void eachLeftOutArgumentIsNamedWithTheReasonThatLeftItOut() {
+    PitestJvmArgs args =
+        PitestJvmArgs.of(
+            List.of("-Dq=\"x\"", "-Dx={a,b}", "-Do={", "-Dh=a#b", "-Dd=}"), Map.of("p", "a,b"), null);
+    assertEquals(
+        "PIT ran the tests without these JVM arguments of the test task, since the java launcher"
+            + " splits a line of the argument file the test JVM starts with at whitespace, removes"
+            + " its quotes, and ends it at a # (hcoles/pitest#1511): -Dq=\"x\" -Dh=a#b\n"
+            + "PIT ran the tests without these JVM arguments of the test task, since PIT's"
+            + " --jvmArgs splits at a comma outside braces and removes every brace once a comma is"
+            + " inside them: -Dx={a,b}\n"
+            + "PIT ran the tests without these JVM arguments of the test task, since PIT's"
+            + " --jvmArgs joins an argument with a { that no } closes to the argument after it:"
+            + " -Do={\n"
+            + "PIT ran the tests without these JVM arguments of the test task, since PIT's"
+            + " --jvmArgs splits at a comma outside braces, and a comma inside braces would make it"
+            + " remove the braces of -Dd=}: -Dp=a,b",
+        PitestRun.leftOutMessage(args.leftOutByReason(), "the test task"));
+  }
+
+  @Test
+  void noArgumentLeftOutNeedsNoLine() {
+    assertNull(PitestRun.leftOutMessage(Map.of(), "the test task"));
+  }
+
+  @Test
+  void aRunThatNamesNoMutatorsUsesTheStrongerGroup() throws IOException {
+    assertEquals("STRONGER", option(arguments(List.of()), "mutators"));
   }
 
   @Test

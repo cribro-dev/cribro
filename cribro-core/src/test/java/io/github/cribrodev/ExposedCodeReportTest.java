@@ -41,7 +41,10 @@ class ExposedCodeReportTest {
   private static final String SAMPLE = ROOT + "/p/Sample.java";
   private static final String SAMPLE_TEST = "lib/src/test/java/p/SampleTest.java";
 
-  /** A case label changed at line 7 exposes lines 8-11; {@code helper} is called from line 9. */
+  /**
+   * A case label changed at line 7 exposes lines 8-11; the call at line 9 matches both overloads of
+   * {@code helper} by name.
+   */
   private static final String SOURCE =
       """
       package p;
@@ -64,6 +67,9 @@ class ExposedCodeReportTest {
         int helper(int c) {
           int twice = c * 2;
           return twice;
+        }
+        int helper(String c) {
+          return c.length();
         }
       }
       """;
@@ -92,7 +98,8 @@ class ExposedCodeReportTest {
 
   /**
    * Renders the block for the change of line 7 of Sample.java and line 5 of SampleTest.java,
-   * against a run that took one branch of line 8, never reached line 9, and ran the helper whole.
+   * against a run that took one branch of line 8, never reached line 9, ran {@code helper(int)}
+   * whole, and never ran {@code helper(String)}.
    */
   private String render(String scope, boolean filtered, Limits limits) throws IOException {
     write(SAMPLE, SOURCE);
@@ -108,6 +115,7 @@ class ExposedCodeReportTest {
             + line(11, 1, 0, 0)
             + line(19, 4, 0, 0)
             + line(20, 2, 0, 0)
+            + line(23, 0, 0, 0)
             + "</sourcefile></package></report>");
     ExposedCode exposed = ExposedCode.find(directory.toFile(), changed, List.of(ROOT));
     return ExposedCodeReport.measure(
@@ -138,12 +146,15 @@ class ExposedCodeReportTest {
             "  test a gap below where those inputs can reach it",
             "",
             "  lib/src/main/java/p/Sample.java",
-            "    run lines 8-11, reached through the conditions changed at line 7",
+            "    run(int, int), lines 8-11, reached through the conditions changed at line 7",
             "      2/3 lines executed, 1/2 branches covered",
             "      8: 1 of 2 branches covered: if (c > 0) {",
             "      9: not executed: out = helper(c);",
-            "    helper, whole body, called from line 9",
+            "    helper(int), whole body, called from line 9",
             "      2/2 lines executed",
+            "    helper(String), whole body, called from line 9",
+            "      0/1 lines executed",
+            "      23: not executed: return c.length();",
             "",
             "  The counts include every test the run executed, and older tests may reach",
             "  this code under the old conditions. To list only what the change's own tests leave"
@@ -183,14 +194,81 @@ class ExposedCodeReportTest {
     assertLinesMatch(
         List.of(
             ">> header >>",
-            "    run lines 8-11, reached through the conditions changed at line 7",
+            "    run(int, int), lines 8-11, reached through the conditions changed at line 7",
             "      2/3 lines executed, 1/2 branches covered",
             "      8: 1 of 2 branches covered: if (c > 0) {",
             "      1 more line in the full report",
             "",
-            "  1 more exposed method in the full report",
+            "  2 more exposed methods in the full report",
             ">> tail >>"),
         render(":lib:test", false, new Limits(1, 1, 50)).lines().toList());
+  }
+
+  @Test
+  void aBraceLineIsNeitherARowNorCountedUnlessItIsTheBodyOfAnEmptyLambda() throws IOException {
+    write(
+        SAMPLE,
+        """
+        package p;
+        class Sample {
+          int run(int x) {
+            if (x > 0) {
+              x++;
+              later(() -> {
+              });
+            } else {
+              x--;
+            }
+            while (x > 9) {
+              x--;
+            }
+            return x;
+          }
+          void later(Runnable r) {}
+        }
+        """);
+    Path xml = directory.resolve("jacoco.xml");
+    Files.writeString(
+        xml,
+        "<report name=\"test\"><package name=\"p\">"
+            + "<class name=\"p/Sample\" sourcefilename=\"Sample.java\">"
+            + "<method name=\"run\" desc=\"(I)I\" line=\"4\"/>"
+            + "<method name=\"lambda$run$0\" desc=\"()V\" line=\"7\"/>"
+            + "</class><sourcefile name=\"Sample.java\">"
+            + line(4, 4, 1, 1)
+            + line(5, 0, 0, 0)
+            + line(6, 0, 0, 0)
+            + line(7, 0, 0, 0)
+            + line(8, 0, 0, 0)
+            + line(9, 2, 0, 0)
+            + line(11, 4, 1, 1)
+            + line(12, 0, 0, 0)
+            + line(13, 0, 0, 0)
+            + line(14, 2, 0, 0)
+            + "</sourcefile></package></report>");
+    ExposedCode exposed =
+        ExposedCode.find(
+            directory.toFile(), Map.of(SAMPLE, new TreeSet<>(List.of(4, 11))), List.of(ROOT));
+
+    assertLinesMatch(
+        List.of(
+            ">> header >>",
+            "  " + SAMPLE,
+            "    run\\S* lines 5-13, reached through the conditions changed at lines 4, 11",
+            "      1/5 lines executed",
+            "      5: not executed: x++;",
+            "      6: not executed: later(() -> {",
+            "      7: not executed: });",
+            "      12: not executed: x--;",
+            ">> tail >>"),
+        ExposedCodeReport.measure(
+                exposed,
+                Map.of(SAMPLE, "p/Sample.java"),
+                JacocoLines.read(List.of(xml.toFile())),
+                SourceLines.under(directory.toFile()))
+            .render(":lib:test", false, tests -> "", Limits.NONE)
+            .lines()
+            .toList());
   }
 
   @Test

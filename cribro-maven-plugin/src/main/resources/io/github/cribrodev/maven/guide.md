@@ -15,12 +15,16 @@ Once the build has run the tests, it prints a block like this before its summary
 ```text
 Diff coverage against origin/main (95aa87fb8), from the tests of guava-tests -Dtest=ImmutableListTest
   a filtered run leaves the rest of the change looking unexecuted
+  ordered by uncovered changed lines, then uncovered branches
 
   guava/src/com/google/common/collect/ImmutableList.java
     6/7 changed lines executed, 3/4 branches covered
     uncovered changed code:
       167: 1 of 2 branches covered: if (len < 0) {
       168: not executed: throw new IllegalArgumentException("len must be non-negative, got " + len);
+
+Total: 6/7 changed lines executed, 3/4 branches covered.
+Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch)
 ```
 
 Each uncovered line is a test you have not written yet, or a line you can justify leaving untested. To run some of the
@@ -31,16 +35,30 @@ module in the build, so `-am` matters when the tests live in a module of their o
 `target/cribro/diff-coverage.txt` of each module whose main sources the change touched, which can be a module other than
 `<module>`.
 
-If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It stays
-counted as uncovered and leaves the list of work.
+The `Uncovered changed code` line counts the uncovered changed lines in two groups. A line that no test executed is in
+the first group, whether or not it has branches, so that group is the changed lines the total leaves unexecuted. A line
+that ran and left a branch outcome untaken is in the second.
+
+A changed line that holds only braces, closing parentheses, semicolons, commas, and `else`, such as `}`, `} else {`, or
+`});`, counts towards no total and is not listed. The instruction the compiler puts on such a line belongs to the
+statement it closes, and the lines and branches of that statement show whether it ran. Two kinds of such line are still
+measured: the closing brace of a method or a lambda with an empty body, which holds its only instruction, and a line
+that carries a branch. The block that follows the total leaves out the same lines. The mutation testing report leaves
+them out of its count of changed lines too, and counts such a line where a mutant is on it.
+
+If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It leaves
+the list of work and stays in the counts, and the `Uncovered changed code` line ends with how many of the uncovered
+lines are acknowledged:
+`Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch), 1 of them acknowledged`.
 
 ### Unchanged code the change routes new inputs to
 
 A changed `case` label, a changed condition of an `if` or a loop, and a call on a changed line can send new inputs to
-lines nobody edited: the statements the label falls through to, the branches the condition guards, the body of a
-method of the same file that the call reaches. The block after the total lists those methods and the lines and
-branches of them the run did not cover. The change does not owe them a test, but they now run under conditions the old
-tests may never have set up.
+lines nobody edited: the statements the label falls through to, the branches the condition guards, the body of a method
+of the same file that the call reaches. The block after the total lists those methods, each by its name and parameter
+types, such as `helper(int)` or `Builder.build()` for a method of a nested class, and the lines and branches of them the
+run did not cover. The change does not owe them a test, but they now run under conditions the old tests may never have
+set up.
 
 After a run of the whole suite, old tests execute most of that code under the old conditions, so the block ends with
 the `-Dtest` arguments that run only the test methods the change added or edited under the module's own `src`
@@ -69,6 +87,11 @@ survives marks a changed line whose behavior no test asserts. For each live muta
 - the tests miss behavior the change defines: add or strengthen a test next to the tests the report names for that line;
 - no caller can observe the difference: the mutant is equivalent, so say so in the pull request;
 - you cannot tell: report it as unresolved.
+
+The report opens with the number of mutants and of the changed lines with bytecode that carry one, such as `8 mutants
+on 7 of 24 changed lines`. Mutation testing checks nothing on the other changed lines, whatever their coverage. A
+parameterized test is named once per line, with the invocations that reach it, such as `CoreQuidemTest.test[1-3, 33]`.
+The numbers are the indexes JUnit gives the invocations, the ones a default display name shows in brackets.
 
 `cribro:pitest-diff` is not part of `test`, and a surviving mutant never fails the build. It costs one run of the target
 tests plus a partial run per mutant, so narrow `-Dcribro.pitestTargetTests` to the test classes that exercise the
@@ -103,7 +126,7 @@ Pass a property with `-D`, or set it in `.mvn/maven.config` or in the `<properti
 | `-Dcribro.diffCoverageShowAll` | off | Prints the whole coverage report to the console |
 | `-Dcribro.diffCoverageMaxFiles=<n>`, `-Dcribro.diffCoverageMaxLinesPerFile=<n>`, `-Dcribro.diffCoverageMaxLines=<n>` | `10`, `10`, `50` | How much of the coverage report the console shows |
 | `-Dcribro.pitestTargetTests=<globs>` | surefire's includes | Tests allowed to kill a mutant |
-| `-Dcribro.pitestMutators=<group>` | `DEFAULTS` | PIT mutator group: `DEFAULTS`, `STRONGER`, or `ALL` |
+| `-Dcribro.pitestMutators=<group>` | `{{pitestMutators}}` | PIT mutator group: `DEFAULTS`, `STRONGER`, or `ALL` |
 | `-Dcribro.pitestThreads=<n>` | half the cores | Mutants analyzed in parallel |
 | `-Dcribro.pitestTimeoutConst=<ms>` | `4000` | Time PIT adds to a test's normal run before it calls a mutant a timeout |
 | `-Dcribro.pitestShowAll` | off | Prints the whole mutation report to the console |
@@ -127,8 +150,10 @@ it, and it needs an Arcmutate licence file, `arcmutate-licence.txt`, at the repo
   reads that agent's file.
 - Only surefire's `default-test` execution is measured; failsafe and other surefire executions are not.
 - A module whose tests run in Maven's own JVM (`forkCount=0`) records no coverage, and the report says so.
-- PIT splits JVM arguments at commas and whitespace. The goal leaves such arguments out and names them in its output;
-  a test that depends on one may fail under PIT and drop out.
+- PIT cannot pass a JVM argument that contains whitespace, a quote, or a `#`, nor one that leaves a `{` open,
+  nor one with a comma when it has a brace, or when another argument PIT passes has one.
+  The goal leaves such arguments out and names them in its output; a test that depends on one may fail under PIT and
+  drop out.
 - PIT runs JUnit Jupiter tests one at a time, whatever surefire sets for parallel execution.
 - `cribro:pitest-diff` has no overall time limit, and surefire's `forkedProcessTimeoutInSeconds` does not bound it. A
   test that hangs before any mutant runs keeps PIT waiting until the build is stopped; `cribro.pitestTimeoutConst`

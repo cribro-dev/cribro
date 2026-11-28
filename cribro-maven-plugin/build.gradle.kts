@@ -88,6 +88,11 @@ tasks.named("generateMavenPluginDescriptor") {
     dependsOn(":cribro-core:versions")
 }
 
+// The tests read the parameter defaults from the descriptor, where Maven reads them.
+dependencies {
+    testRuntimeOnly(files(tasks.named("generateMavenPluginDescriptor")))
+}
+
 // The integration tests run a real Maven, which resolves cribro from it-repository, and Maven
 // Central for everything else.
 val mavenDistribution = configurations.dependencyScope("mavenDistribution")

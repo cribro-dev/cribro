@@ -19,8 +19,10 @@ import io.github.cribrodev.ChangedLinesFile;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
+import java.util.stream.Collectors;
 import org.pitest.mutationtest.build.InterceptorParameters;
 import org.pitest.mutationtest.build.MutationInterceptor;
 import org.pitest.mutationtest.build.MutationInterceptorFactory;
@@ -34,7 +36,8 @@ import org.pitest.plugin.Feature;
  * puts the factory there also sets the property: the Gradle {@code pitestDiff} task and the Maven
  * goal {@code cribro:pitest-diff} do both. The feature is on by default so that the caller need not
  * also pass {@code --features}, and a missing property fails the run rather than letting it mutate
- * every line of the target classes.
+ * every line of the target classes. The filter writes the changed lines with bytecode to PIT's
+ * report directory, reading the text of each changed file under PIT's source directories.
  */
 public final class ChangedLinesFilterFactory implements MutationInterceptorFactory {
 
@@ -60,11 +63,32 @@ public final class ChangedLinesFilterFactory implements MutationInterceptorFacto
           "System property " + PROPERTY + " is not set; it must name the changed-lines file");
     }
     Map<String, NavigableSet<Integer>> lines;
+    Map<String, String> paths;
     try {
       lines = ChangedLinesFile.read(Path.of(file));
+      paths = ChangedLinesFile.readPaths(Path.of(file));
     } catch (IOException e) {
       throw new UncheckedIOException("Cannot read the changed-lines file " + file, e);
     }
-    return new ChangedLinesFilter(lines);
+    return new ChangedLinesFilter(
+        lines,
+        paths,
+        sourceRoots(params),
+        Path.of(params.data().getReportDir()).resolve(ChangedLinesFile.WITH_BYTECODE));
+  }
+
+  /**
+   * Returns PIT's source directories, or none under PIT before 1.9.8, which has no {@code
+   * getSourcePaths}. That PIT never calls {@link ChangedLinesFilter#initialise}, so no source text
+   * is read there.
+   */
+  private static List<Path> sourceRoots(InterceptorParameters params) {
+    try {
+      return params.data().getSourcePaths().stream()
+          .map(Path::toAbsolutePath)
+          .collect(Collectors.toList());
+    } catch (NoSuchMethodError e) {
+      return List.of();
+    }
   }
 }

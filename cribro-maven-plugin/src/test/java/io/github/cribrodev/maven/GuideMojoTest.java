@@ -15,11 +15,16 @@
  */
 package io.github.cribrodev.maven;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** The command the guide tells the reader to run. */
+/** The guide, and the command it tells the reader to run. */
 class GuideMojoTest {
 
   @Test
@@ -39,5 +44,15 @@ class GuideMojoTest {
     assertEquals(
         "mvn -Dmaven.ext.class.path='/opt/my tools/cribro-maven.jar'",
         GuideMojo.mavenCommand("mvn", "/opt/my tools/cribro-maven.jar", "/home/u"));
+  }
+
+  @Test
+  void theShippedGuideHasAValueForEveryPlaceholder() throws IOException {
+    String template;
+    try (InputStream in = GuideMojo.class.getResourceAsStream("guide.md")) {
+      template = new String(in.readAllBytes(), UTF_8);
+    }
+    String guide = GuideMojo.render(template, "1.2.3", "mvn", List.of(":app"), GuideMojo.values());
+    assertFalse(guide.contains("{{"), guide);
   }
 }

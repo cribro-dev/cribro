@@ -123,7 +123,7 @@ class ExposedCodeTest {
         }
         """;
     write(SAMPLE, source);
-    assertExposed(source, List.of("run under [7]"));
+    assertExposed(source, List.of("run(int, int) under [7]"));
   }
 
   @Test
@@ -152,7 +152,7 @@ class ExposedCodeTest {
         }
         """;
     write(SAMPLE, source);
-    assertExposed(source, List.of("run under [6]"));
+    assertExposed(source, List.of("run(int, int) under [6]"));
   }
 
   @Test
@@ -176,7 +176,7 @@ class ExposedCodeTest {
         }
         """;
     write(SAMPLE, source);
-    assertExposed(source, List.of("run under [5]"));
+    assertExposed(source, List.of("run(int) under [5]"));
   }
 
   @Test
@@ -205,7 +205,7 @@ class ExposedCodeTest {
         }
         """;
     write(SAMPLE, source);
-    assertExposed(source, List.of("run under [5, 9, 14, 15]"));
+    assertExposed(source, List.of("run(int) under [5, 9, 14, 15]"));
   }
 
   @Test
@@ -262,7 +262,7 @@ class ExposedCodeTest {
         }
         """;
     write(SAMPLE, source);
-    assertExposed(source, List.of("helper called from [5]", "viaThis called from [5]"));
+    assertExposed(source, List.of("helper(int) called from [5]", "viaThis(int) called from [5]"));
   }
 
   @Test
@@ -283,7 +283,180 @@ class ExposedCodeTest {
         }
         """;
     write(SAMPLE, source);
-    assertExposed(source, List.of("run under [4]", "helper called from [5]"));
+    assertExposed(source, List.of("run(int) under [4]", "helper(int) called from [5]"));
+  }
+
+  @Test
+  void eachOverloadACallReachesIsNamedByItsParameterTypes() throws IOException {
+    String source =
+        """
+        package p;
+        import java.util.List;
+        class Sample {
+          void run() {
+            helper(1); // changed
+          }
+          void helper(int c) {
+            int a = c; // exposed
+          }
+          void helper(String s) {
+            String b = s; // exposed
+          }
+          void helper(String... parts) {
+            int d = parts.length; // exposed
+          }
+          void helper(java.util.@Nullable List<@Nullable String> items, int[] counts) {
+            int e = counts.length; // exposed
+          }
+          void helper(int[]... grids) {
+            int f = grids.length; // exposed
+          }
+          void helper(long @Nullable [] @Nullable ... rows) {
+            int g = rows.length; // exposed
+          }
+          void helper(@Doc(url = "http://x") char /* c */ ... /* chars */ cs) {
+            int h = cs.length; // exposed
+          }
+          void helper(byte @Doc("...") [] bytes) {
+            int l = bytes.length; // exposed
+          }
+          void helper(Outer<String>.Inner inner) {
+            Object i = inner; // exposed
+          }
+          <T extends Number> void helper(T t) {
+            Object j = t; // exposed
+          }
+          <T extends CharSequence> void helper(T t) {
+            Object k = t; // exposed
+          }
+        }
+        """;
+    write(SAMPLE, source);
+    assertExposed(
+        source,
+        List.of(
+            "helper(int) called from [5]",
+            "helper(String) called from [5]",
+            "helper(String...) called from [5]",
+            "helper(java.util.List, int[]) called from [5]",
+            "helper(int[]...) called from [5]",
+            "helper(long[]...) called from [5]",
+            "helper(char...) called from [5]",
+            "helper(byte[]) called from [5]",
+            "helper(Outer.Inner) called from [5]",
+            "helper(T) at line 34 called from [5]",
+            "helper(T) at line 37 called from [5]"));
+  }
+
+  @Test
+  void eachDeclarationOfAFileHoldingOneTopLevelClassGetsANameOfItsOwn() throws IOException {
+    String source =
+        """
+        package p;
+        class Sample {
+          int value;
+          Sample(int c) {
+            if (c > 0) { // changed
+              value = c; // exposed
+            } // exposed
+          }
+          void start() {
+            build(); Builder(); m(1); x(); // changed
+            new Runnable() {
+              public void run() {
+                if (value > 0) { // changed
+                  value--; // exposed
+                } // exposed
+              }
+            };
+            new Runnable() {
+              public void run() {
+                if (value < 0) { // changed
+                  value++; // exposed
+                } // exposed
+              }
+            };
+            class L {
+              void x() {
+                int a = 1; // exposed
+              }
+            }
+          }
+          void other() {
+            class L {
+              void x() {
+                int b = 2; // exposed
+              }
+            }
+          }
+          void Builder() {
+            int d = 4; // exposed
+          }
+          static class Builder {
+            Builder() {
+              if (Sample.class != null) { // changed
+                build(); // exposed
+              } // exposed
+            }
+            void build() {
+              int e = 5; // exposed
+            }
+          }
+          enum Mode {
+            A {
+              void m(int c) {
+                int f = c; // exposed
+              }
+            },
+            B {
+              void m(int c) {
+                int g = c; // exposed
+              }
+            };
+            void m(int c) {}
+          }
+        }
+        """;
+    write(SAMPLE, source);
+    assertExposed(
+        source,
+        List.of(
+            "new Sample(int) under [5]",
+            "(anonymous Runnable).run() at line 12 under [13]",
+            "(anonymous Runnable).run() at line 19 under [20]",
+            "new Builder() under [43]",
+            "Builder.build() called from [10, 44]",
+            "Builder() called from [10]",
+            "Mode.(anonymous Mode).m(int) at line 53 called from [10]",
+            "Mode.(anonymous Mode).m(int) at line 58 called from [10]",
+            "L.x() at line 26 called from [10]",
+            "L.x() at line 33 called from [10]"));
+  }
+
+  @Test
+  void aFileHoldingTwoTopLevelClassesNamesEachMethodWithItsOutermostClass() throws IOException {
+    String source =
+        """
+        package p;
+        class Sample {
+          void run() {
+            y(1); // changed
+          }
+          static class Bar {
+            void y(int c) {
+              int a = c; // exposed
+            }
+          }
+        }
+        class Bar {
+          void y(int c) {
+            int b = c; // exposed
+          }
+        }
+        """;
+    write(SAMPLE, source);
+    assertExposed(
+        source, List.of("Sample.Bar.y(int) called from [4]", "Bar.y(int) called from [4]"));
   }
 
   @Test

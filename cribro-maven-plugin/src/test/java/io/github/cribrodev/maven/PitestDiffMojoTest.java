@@ -19,6 +19,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +28,7 @@ import io.github.cribrodev.PitestRun;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.nio.charset.Charset;
@@ -51,6 +53,7 @@ import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.Xpp3DomBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -62,6 +65,48 @@ import org.junit.jupiter.params.provider.ValueSource;
 class PitestDiffMojoTest {
 
   @TempDir Path testClasses;
+
+  @Test
+  void anArgumentWithAnUndefinedPropertyIsNamedApartFromTheSplitOnes() {
+    assertEquals(
+        "PIT ran the tests without these JVM arguments of surefire's default-test, since they name"
+            + " an @{property} the project does not define: @{absent}\n"
+            + "PIT ran the tests without these JVM arguments of surefire's default-test, since PIT"
+            + " splits them: -Da=b,{c}",
+        PitestDiffMojo.leftOutMessage(
+            List.of("@{absent}"), Map.of("PIT splits them", List.of("-Da=b,{c}"))));
+  }
+
+  @Test
+  void noArgumentLeftOutNeedsNoLine() {
+    assertNull(PitestDiffMojo.leftOutMessage(List.of(), Map.of()));
+  }
+
+  /** The default is read from the plugin descriptor, which is where Maven reads it. */
+  @Test
+  void aBuildThatNamesNoMutatorsGetsTheStrongerGroup() throws Exception {
+    Xpp3Dom plugin;
+    try (InputStream descriptor =
+        PitestDiffMojo.class.getResourceAsStream("/META-INF/maven/plugin.xml")) {
+      assertNotNull(descriptor, "META-INF/maven/plugin.xml on the test classpath");
+      plugin = Xpp3DomBuilder.build(new InputStreamReader(descriptor, UTF_8));
+    }
+    assertEquals(
+        "cribro-maven-plugin",
+        plugin.getChild("artifactId").getValue(),
+        "the plugin of the first META-INF/maven/plugin.xml on the test classpath");
+    Xpp3Dom pitestDiff = null;
+    for (Xpp3Dom mojo : plugin.getChild("mojos").getChildren("mojo")) {
+      if (mojo.getChild("goal").getValue().equals("pitest-diff")) {
+        pitestDiff = mojo;
+      }
+    }
+    assertNotNull(pitestDiff, "the pitest-diff goal in the plugin descriptor");
+
+    assertEquals(
+        "STRONGER",
+        pitestDiff.getChild("configuration").getChild("mutators").getAttribute("default-value"));
+  }
 
   @ParameterizedTest(name = "{0}")
   @ValueSource(

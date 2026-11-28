@@ -15,8 +15,12 @@
  */
 package io.github.cribrodev;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -135,5 +139,17 @@ class CribroGuideTaskTest {
         """,
         CribroGuideTask.render(
             "Run {{gradlew}}.\n", "1.2.3", "./gradlew", List.of(), Map.of()));
+  }
+
+  @Test
+  void theShippedGuideHasAValueForEveryPlaceholder() throws IOException {
+    String template;
+    try (InputStream in = CribroGuideTask.class.getResourceAsStream("guide.md")) {
+      template = new String(in.readAllBytes(), UTF_8);
+    }
+    String guide =
+        CribroGuideTask.render(
+            template, "1.2.3", "./gradlew", List.of(":app"), CribroGuideTask.values());
+    assertFalse(guide.contains("{{"), guide);
   }
 }

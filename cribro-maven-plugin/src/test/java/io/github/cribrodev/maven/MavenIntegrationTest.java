@@ -418,7 +418,7 @@ class MavenIntegrationTest {
         pit,
         "Skipped: -am builds lib only for the modules -pl names; add it to -pl to run PIT on its"
             + " tests.");
-    assertContains(pit, "2 mutants: 2 killed");
+    assertContains(pit, "2 mutants on 1 of 1 changed line: 2 killed");
     Path survivors = root.resolve("lib-tests/target/cribro/pitest-diff/survivors.txt");
     assertTrue(Files.isRegularFile(survivors), () -> survivors + " after the run");
   }

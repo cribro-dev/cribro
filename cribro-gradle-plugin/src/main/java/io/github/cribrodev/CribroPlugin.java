@@ -47,6 +47,7 @@ import org.gradle.testing.jacoco.plugins.JacocoPlugin;
 import org.gradle.testing.jacoco.plugins.JacocoPluginExtension;
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension;
 import org.gradle.testing.jacoco.tasks.JacocoReport;
+import org.gradle.util.GradleVersion;
 
 /**
  * Adds {@code diffCoverage}, {@code changedLines}, and {@code pitestDiff} to every project that
@@ -251,9 +252,19 @@ public abstract class CribroPlugin implements Plugin<Project> {
               project.getExtensions().getByType(JacocoPluginExtension.class);
           // The JaCoCo that Gradle bundles lags behind the JDKs that tests run on, so a build that
           // names no version of its own gets one that reads current class files.
+          String bundled = bundledJacocoVersion(JacocoPlugin.class);
           if (jacocoVersion != null) {
             jacoco.setToolVersion(jacocoVersion);
-          } else if (JacocoPlugin.DEFAULT_JACOCO_VERSION.equals(jacoco.getToolVersion())
+          } else if (bundled == null) {
+            project
+                .getLogger()
+                .info(
+                    "cribro left the JaCoCo version at {}, since Gradle {} has no public"
+                        + " JacocoPlugin.DEFAULT_JACOCO_VERSION to tell its default from a version"
+                        + " the build chose; set cribro.jacocoVersion to choose one",
+                    jacoco.getToolVersion(),
+                    GradleVersion.current().getVersion());
+          } else if (bundled.equals(jacoco.getToolVersion())
               && compareVersions(jacoco.getToolVersion(), JACOCO_VERSION) < 0) {
             jacoco.setToolVersion(JACOCO_VERSION);
           }
@@ -357,7 +368,7 @@ public abstract class CribroPlugin implements Plugin<Project> {
                   providers.provider(
                       () -> PitestJvmArgs.of(t.getJvmArgs(), t.getSystemProperties(), t.getMaxHeapSize()));
               task.getTestJvmArgs().set(jvmArgs.map(PitestJvmArgs::value));
-              task.getLeftOutJvmArgs().set(jvmArgs.map(PitestJvmArgs::leftOut));
+              task.getLeftOutJvmArgs().set(jvmArgs.map(PitestJvmArgs::leftOutByReason));
               // PIT runs the tests on the JVM the `test` task runs them on.
               task.getJavaLauncher().set(t.getJavaLauncher());
               task.getPitestClasspath().from(pitest);
@@ -380,7 +391,11 @@ public abstract class CribroPlugin implements Plugin<Project> {
                   .set(project.getLayout().getBuildDirectory().dir("reports/pitest-diff"));
               task.getRepositoryRoot().set(repositoryRoot);
               task.getTargetTests().set(providers.gradleProperty("cribro.pitestTargetTests"));
-              task.getMutators().set(providers.gradleProperty("cribro.pitestMutators").orElse("DEFAULTS"));
+              task.getMutators()
+                  .set(
+                      providers
+                          .gradleProperty("cribro.pitestMutators")
+                          .orElse(PitestRun.DEFAULT_MUTATORS));
               task.getThreads()
                   .set(
                       intProperty(
@@ -446,6 +461,24 @@ public abstract class CribroPlugin implements Plugin<Project> {
           ChangedLinesFile.class.getProtectionDomain().getCodeSource().getLocation().toURI());
     } catch (URISyntaxException e) {
       throw new IllegalStateException("cannot locate the cribro plugin jar", e);
+    }
+  }
+
+  /**
+   * Returns the JaCoCo version that the Gradle running this build bundles, or null where {@code
+   * jacocoPlugin} has no public {@code DEFAULT_JACOCO_VERSION} field.
+   *
+   * <p>{@link JacocoPlugin#DEFAULT_JACOCO_VERSION} is a compile-time constant, so javac replaces a
+   * direct reference to it with the value from the Gradle that compiles cribro. The field is read
+   * reflectively so that the value comes from the Gradle that runs the build.
+   *
+   * @param jacocoPlugin {@link JacocoPlugin}, or another class in a test
+   */
+  static String bundledJacocoVersion(Class<?> jacocoPlugin) {
+    try {
+      return (String) jacocoPlugin.getField("DEFAULT_JACOCO_VERSION").get(null);
+    } catch (ReflectiveOperationException e) {
+      return null;
     }
   }
 

@@ -138,6 +138,23 @@ class JacocoLinesTest {
       assertTrue(read("").covers(KEY));
     }
 
+    @Test
+    void theFirstLineOfAMethodIsRecordedAgainstTheSourceFileOfItsClass() throws IOException {
+      File file = new File(directory.toFile(), "methods.xml");
+      Files.writeString(
+          file.toPath(),
+          "<report name=\"test\"><package name=\"com/uber/nullaway\">"
+              + "<class name=\"com/uber/nullaway/Sample\" sourcefilename=\"Sample.java\">"
+              + "<method name=\"noop\" desc=\"()V\" line=\"7\"/>"
+              + "<method name=\"generated\" desc=\"()V\"/>"
+              + "</class></package></report>");
+      JacocoLines lines = JacocoLines.read(List.of(file));
+      assertAll(
+          () -> assertTrue(lines.startsMethod(KEY, 7), "startsMethod(7)"),
+          () -> assertFalse(lines.startsMethod(KEY, 8), "startsMethod(8)"),
+          () -> assertFalse(lines.startsMethod(KEY, 0), "startsMethod(0)"));
+    }
+
     /** JaCoCo names the default package with an empty string, which no key spells out. */
     @Test
     void aSourceFileInTheDefaultPackageIsKeyedByItsNameAlone() throws IOException {

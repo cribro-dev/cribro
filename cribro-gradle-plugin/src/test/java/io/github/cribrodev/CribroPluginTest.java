@@ -16,6 +16,7 @@
 package io.github.cribrodev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -23,20 +24,22 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.gradle.api.Project;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.testfixtures.ProjectBuilder;
+import org.gradle.testing.jacoco.plugins.JacocoPlugin;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The plugin measures the directories of the main source set that hold Java or Kotlin sources,
- * puts the PIT plugins a build names on PIT's classpath, and replaces Gradle's bundled JaCoCo only
- * with a newer one, so the version comparison decides whether a build on a future Gradle is
- * downgraded.
+ * puts the PIT plugins a build names on PIT's classpath, runs PIT with the {@code STRONGER} mutator
+ * group where the build names none, and replaces Gradle's bundled JaCoCo only with a newer one, so
+ * the version comparison decides whether a build on a future Gradle is downgraded.
  */
 class CribroPluginTest {
 
@@ -179,6 +182,34 @@ class CribroPluginTest {
   }
 
   @Test
+  void pitestDiffUsesTheStrongerGroupWhereTheBuildNamesNone() throws IOException {
+    Project project = javaProject("");
+
+    assertEquals(
+        "STRONGER",
+        project.getTasks().named("pitestDiff", PitestDiffTask.class).get().getMutators().get());
+  }
+
+  @Test
+  void pitestDiffGetsTheTestTasksLeftOutArgumentsWithTheirReasons() throws IOException {
+    Project project = javaProject("");
+    project
+        .getTasks()
+        .named("test", org.gradle.api.tasks.testing.Test.class)
+        .get()
+        .jvmArgs("-Dq=a b");
+
+    assertEquals(
+        Map.of(PitestJvmArgs.ARGUMENT_FILE, List.of("-Dq=a b")),
+        project
+            .getTasks()
+            .named("pitestDiff", PitestDiffTask.class)
+            .get()
+            .getLeftOutJvmArgs()
+            .get());
+  }
+
+  @Test
   void aLaterPatchIsNewer() {
     assertTrue(CribroPlugin.compareVersions("0.8.13", "0.8.16") < 0);
   }
@@ -197,5 +228,16 @@ class CribroPluginTest {
   @Test
   void aNewerBundledVersionIsKept() {
     assertTrue(CribroPlugin.compareVersions("0.9.1", "0.8.16") > 0);
+  }
+
+  @Test
+  void aGradleWithNoBundledJacocoFieldGivesNoVersion() {
+    assertNull(CribroPlugin.bundledJacocoVersion(Object.class));
+  }
+
+  @Test
+  void theBundledJacocoVersionIsTheFieldOfTheGradleThatRuns() {
+    assertEquals(
+        JacocoPlugin.DEFAULT_JACOCO_VERSION, CribroPlugin.bundledJacocoVersion(JacocoPlugin.class));
   }
 }

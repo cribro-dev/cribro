@@ -63,6 +63,16 @@ public final class PitestRun {
    */
   public static final String ALL_TESTS = "~.*";
 
+  /**
+   * The PIT mutator group a run uses where the build names none.
+   *
+   * <p>{@code STRONGER} adds to {@code DEFAULTS} a mutator of switch statements and the mutators
+   * that replace an equality or ordering check with {@code true}; a test kills one of the latter
+   * only by running the check where it is false. PIT mutates only the changed lines, so the extra
+   * mutants add little to the run.
+   */
+  public static final String DEFAULT_MUTATORS = "STRONGER";
+
   private List<String> targetClasses = List.of();
   private File reportDir;
   private File changedLines;
@@ -72,7 +82,7 @@ public final class PitestRun {
   private List<File> sourceDirs = List.of();
   private List<File> classPath = List.of();
   private String jvmArgs = "";
-  private String mutators = "DEFAULTS";
+  private String mutators = DEFAULT_MUTATORS;
   private int threads = 1;
   private int timeoutConst = 4000;
   private final Map<String, String> extraOptions = new LinkedHashMap<>();
@@ -242,25 +252,34 @@ public final class PitestRun {
   }
 
   /**
-   * Returns the line naming the JVM arguments PIT ran the tests without, or null where there are
-   * none.
+   * Returns the lines naming the JVM arguments PIT ran the tests without, one line per reason, or
+   * null where there are none.
    *
+   * @param leftOut the arguments keyed by why they are left out, such as {@link
+   *     PitestJvmArgs#leftOutByReason()} returns
    * @param source what the arguments came from, such as {@code the test task}
    */
-  public static String leftOutMessage(List<String> leftOut, String source) {
+  public static String leftOutMessage(Map<String, List<String>> leftOut, String source) {
     if (leftOut.isEmpty()) {
       return null;
     }
-    return "PIT ran the tests without these JVM arguments of "
-        + source
-        + ", since it splits arguments at commas and whitespace: "
-        + String.join(" ", leftOut);
+    return leftOut.entrySet().stream()
+        .map(
+            reason ->
+                "PIT ran the tests without these JVM arguments of "
+                    + source
+                    + ", since "
+                    + reason.getKey()
+                    + ": "
+                    + String.join(" ", reason.getValue()))
+        .collect(Collectors.joining("\n"));
   }
 
   /**
    * Returns the message of a PIT run that failed: its exit code and the end of {@link #LOG}.
    *
-   * @param leftOut the line {@link #leftOutMessage} returned, or null
+   * @param leftOut the lines naming the arguments left out, such as {@link #leftOutMessage}
+   *     returns, or null
    */
   public static String failureMessage(int exitCode, File repository, File log, String leftOut)
       throws IOException {
@@ -297,13 +316,17 @@ public final class PitestRun {
       throws IOException {
     String header = ChangedLinesFile.readHeader(changedLines.toPath());
     String tests = targetTests != null ? "tests matching " + targetTests : "all tests";
+    // PIT before 1.11, which cribro.pitestVersion can select, never calls the interceptor method
+    // that writes this file.
+    File withBytecode = new File(reportDir, ChangedLinesFile.WITH_BYTECODE);
     PitestSurvivors report =
         PitestSurvivors.read(
             (header == null ? "against an unknown base" : header) + ", " + tests,
             new File(reportDir, MutantsFile.NAME),
             repository,
             sourceDirs,
-            ChangedLinesFile.readPaths(changedLines.toPath()));
+            ChangedLinesFile.readPaths(changedLines.toPath()),
+            withBytecode.isFile() ? ChangedLinesFile.read(withBytecode.toPath()) : null);
     return report.writeAndRender(
         repository,
         new File(reportDir, "survivors.txt"),

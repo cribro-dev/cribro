@@ -15,7 +15,9 @@
  */
 package io.github.cribrodev;
 
+import com.sun.source.tree.AnnotatedTypeTree;
 import com.sun.source.tree.AnnotationTree;
+import com.sun.source.tree.ArrayTypeTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ClassTree;
@@ -29,9 +31,12 @@ import com.sun.source.tree.IfTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
@@ -43,6 +48,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -80,12 +86,24 @@ import javax.tools.ToolProvider;
  * <p>Sources are parsed with the javac of the running JDK, without resolving a symbol, so a call is
  * matched by its simple name and every overload of that name counts. Where the JVM has no javac,
  * nothing is found.
+ *
+ * <p>A region names its method by the signature as the source spells it, without annotations and
+ * type arguments: {@code helper(int)}, {@code helper(List, String...)}. The names of the enclosing
+ * classes come first, as in {@code Builder.build()}, except the name of the class a file holds
+ * alone at its top level; an anonymous class is named after its supertype, as in {@code (anonymous
+ * Runnable).run()}, and a constructor is {@code new} and its class, as in {@code new Builder(int)}.
+ * Where two methods of a file get one name, such as overloads that differ in the bound of a type
+ * variable or methods of two local classes, each name ends with the line its declaration starts on,
+ * as in {@code f(T) at line 12}. Two such methods whose declarations start on one line still share
+ * a name.
  */
 final class ExposedCode {
 
   /** Unchanged lines of one method that a change reaches through the lines named as triggers. */
   static final class Region {
     final String path;
+
+    /** The name of the method, as the class comment of {@link ExposedCode} spells it. */
     final String method;
 
     /** The changed lines that route control here, or the call sites for a called method. */
@@ -286,10 +304,144 @@ final class ExposedCode {
       return start > 0 && end >= start && !changed.subSet(start, true, end, true).isEmpty();
     }
 
+    /**
+     * Returns the name of each method of the file, as the class comment of {@link ExposedCode}
+     * spells it.
+     */
+    private Map<MethodTree, String> signatures() {
+      Map<MethodTree, String> signatures = new LinkedHashMap<>();
+      boolean alone =
+          unit.getTypeDecls().stream().filter(ClassTree.class::isInstance).count() == 1;
+      new TreeScanner<Void, Void>() {
+        /** The names of the enclosing classes, innermost first. */
+        private final Deque<String> classes = new ArrayDeque<>();
+
+        /** The name of the anonymous class whose body is scanned next. */
+        private String anonymous;
+
+        @Override
+        public Void visitNewClass(NewClassTree tree, Void unused) {
+          scan(tree.getEnclosingExpression(), unused);
+          scan(tree.getIdentifier(), unused);
+          scan(tree.getTypeArguments(), unused);
+          scan(tree.getArguments(), unused);
+          if (tree.getClassBody() != null) {
+            anonymous = "(anonymous " + typeName(tree.getIdentifier()) + ")";
+            scan(tree.getClassBody(), unused);
+          }
+          return null;
+        }
+
+        @Override
+        public Void visitClass(ClassTree tree, Void unused) {
+          String name = tree.getSimpleName().toString();
+          classes.push(name.isEmpty() ? anonymous : name);
+          try {
+            return super.visitClass(tree, unused);
+          } finally {
+            classes.pop();
+          }
+        }
+
+        @Override
+        public Void visitMethod(MethodTree tree, Void unused) {
+          signatures.put(tree, signature(tree, classes, alone));
+          return super.visitMethod(tree, unused);
+        }
+      }.scan(unit, null);
+      Map<String, Long> uses = new TreeMap<>();
+      signatures.values().forEach(name -> uses.merge(name, 1L, Long::sum));
+      signatures.replaceAll(
+          (method, name) -> uses.get(name) > 1 ? name + " at line " + startLine(method) : name);
+      return signatures;
+    }
+
+    /**
+     * Returns the signature of a method as the class comment of {@link ExposedCode} spells it.
+     *
+     * @param classes the names of the enclosing classes, innermost first, as the class comment of
+     *     {@link ExposedCode} spells them
+     * @param alone whether the outermost class is the only top-level class of the file, whose name
+     *     the signature leaves out
+     */
+    private String signature(MethodTree method, Deque<String> classes, boolean alone) {
+      List<String> owners = new ArrayList<>(classes);
+      Collections.reverse(owners);
+      String outermost = owners.get(0);
+      if (alone) {
+        owners.remove(0);
+      }
+      StringBuilder out = new StringBuilder();
+      String name = method.getName().toString();
+      if (name.equals("<init>")) {
+        out.append("new ");
+        name = owners.isEmpty() ? outermost : owners.remove(owners.size() - 1);
+      }
+      for (String owner : owners) {
+        out.append(owner).append('.');
+      }
+      out.append(name).append('(');
+      List<? extends VariableTree> parameters = method.getParameters();
+      for (int i = 0; i < parameters.size(); i++) {
+        if (i > 0) {
+          out.append(", ");
+        }
+        out.append(parameterType(parameters.get(i)));
+      }
+      return out.append(')').toString();
+    }
+
+    /**
+     * Returns the type of a parameter as {@link #typeName(Tree)} spells it, with {@code ...} for
+     * the last array dimension of a variable-arity parameter.
+     */
+    private String parameterType(VariableTree parameter) {
+      String type = typeName(parameter.getType());
+      // javac reads String... as String[], and ends the type's span at the ... it read.
+      if (source(parameter.getType()).endsWith("...")) {
+        return type.substring(0, type.length() - "[]".length()) + "...";
+      }
+      return type;
+    }
+
+    /** Returns a type as the source spells it, without annotations and type arguments. */
+    private String typeName(Tree type) {
+      if (type instanceof AnnotatedTypeTree) {
+        return typeName(((AnnotatedTypeTree) type).getUnderlyingType());
+      }
+      if (type instanceof ParameterizedTypeTree) {
+        return typeName(((ParameterizedTypeTree) type).getType());
+      }
+      if (type instanceof ArrayTypeTree) {
+        return typeName(((ArrayTypeTree) type).getType()) + "[]";
+      }
+      if (type instanceof MemberSelectTree) {
+        MemberSelectTree member = (MemberSelectTree) type;
+        return typeName(member.getExpression()) + "." + member.getIdentifier();
+      }
+      return type.toString();
+    }
+
+    /** Returns the source text of a tree, or an empty string where its position is unknown. */
+    private String source(Tree tree) {
+      long start = positions.getStartPosition(unit, tree);
+      long end = positions.getEndPosition(unit, tree);
+      if (start < 0 || end < start) {
+        return "";
+      }
+      try {
+        CharSequence text = unit.getSourceFile().getCharContent(true);
+        return text.subSequence((int) start, (int) end).toString();
+      } catch (IOException e) {
+        return "";
+      }
+    }
+
     /** Returns the regions of this file, own control flow first, then the called methods. */
     List<Region> exposed(String path, NavigableSet<Integer> changed) {
       Map<MethodTree, Region> own = new LinkedHashMap<>();
       Map<String, List<MethodTree>> byName = new TreeMap<>();
+      Map<MethodTree, String> signatures = signatures();
       List<Call> calls = new ArrayList<>();
       new TreeScanner<Void, Void>() {
         private final Deque<MethodTree> methods = new ArrayDeque<>();
@@ -393,7 +545,7 @@ final class ExposedCode {
             return;
           }
           Region region =
-              own.computeIfAbsent(method, key -> new Region(path, key.getName().toString(), false));
+              own.computeIfAbsent(method, key -> new Region(path, signatures.get(key), false));
           region.triggers.add(trigger);
           for (StatementTree statement : statements) {
             addLines(statement, region.lines);
@@ -428,7 +580,7 @@ final class ExposedCode {
               called.computeIfAbsent(
                   callee,
                   key -> {
-                    Region body = new Region(path, key.getName().toString(), true);
+                    Region body = new Region(path, signatures.get(key), true);
                     for (StatementTree statement : key.getBody().getStatements()) {
                       addLines(statement, body.lines);
                     }

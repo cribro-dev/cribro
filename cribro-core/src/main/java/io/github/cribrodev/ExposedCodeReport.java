@@ -58,7 +58,8 @@ final class ExposedCodeReport {
 
   /**
    * Measures the exposed lines against the run's counters; a method with no line that emits
-   * bytecode is left out.
+   * bytecode is left out. A line that holds no code of its own, as {@link CodeLines#holdsCode}
+   * decides, counts towards no total and is not a row, as in the diff coverage block.
    *
    * @param keys the {@link SourceFileKey} of each changed file by its path, the key the coverage
    *     block looks the same counters up by
@@ -77,6 +78,11 @@ final class ExposedCodeReport {
         if (counters == null) {
           continue;
         }
+        String source = sources.get(region.path, number);
+        if (!CodeLines.holdsCode(
+            counters.totalBranches > 0, lines.startsMethod(key, number), source)) {
+          continue;
+        }
         method.executableLines++;
         if (counters.isExecuted()) {
           method.executedLines++;
@@ -90,7 +96,7 @@ final class ExposedCodeReport {
                   counters.isExecuted(),
                   counters.coveredBranches,
                   counters.totalBranches,
-                  DiffCoverageReport.quote(sources.get(region.path, number))));
+                  DiffCoverageReport.quote(source)));
         }
       }
       if (method.executableLines > 0) {
@@ -101,8 +107,9 @@ final class ExposedCodeReport {
   }
 
   /**
-   * Returns the block the report prints after its total: an empty string where the change exposes
-   * nothing that emits bytecode, or one line saying so where this JVM has no javac to look with.
+   * Returns the block the report prints after its total: an empty string where no exposed line both
+   * emits bytecode and holds code, as {@link CodeLines#holdsCode} decides, or, where this JVM has no
+   * javac to parse the sources with, one line that says none was looked for.
    *
    * @param scope what the run covered, such as the test task and its filter
    * @param filtered whether the run was narrowed to some of the tests
@@ -143,7 +150,7 @@ final class ExposedCodeReport {
       if (region.called) {
         out.append(", whole body, called from ");
       } else {
-        out.append(" lines ")
+        out.append(", lines ")
             .append(region.lines.first())
             .append('-')
             .append(region.lines.last())

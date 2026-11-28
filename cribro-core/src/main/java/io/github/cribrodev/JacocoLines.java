@@ -23,6 +23,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.function.Predicate;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
@@ -86,6 +88,7 @@ public final class JacocoLines {
   /** Collects the counters of a run that the caller has analyzed itself. */
   public static final class Builder {
     private final Map<String, Map<Integer, Counters>> bySourceFile = new HashMap<>();
+    private final Map<String, Set<Integer>> methodLines = new HashMap<>();
 
     /**
      * Records that the run knows the source file, so that a file whose lines all emit no bytecode
@@ -111,15 +114,27 @@ public final class JacocoLines {
       return this;
     }
 
+    /**
+     * Records the first line of a method, lambda body included, as the {@code line} attribute of
+     * JaCoCo's {@code <method>} element carries it.
+     */
+    public Builder method(String sourceFileKey, int firstLine) {
+      methodLines.computeIfAbsent(sourceFileKey, unused -> new TreeSet<>()).add(firstLine);
+      return this;
+    }
+
     public JacocoLines build() {
-      return new JacocoLines(bySourceFile);
+      return new JacocoLines(bySourceFile, methodLines);
     }
   }
 
   private final Map<String, Map<Integer, Counters>> bySourceFile;
+  private final Map<String, Set<Integer>> methodLines;
 
-  private JacocoLines(Map<String, Map<Integer, Counters>> bySourceFile) {
+  private JacocoLines(
+      Map<String, Map<Integer, Counters>> bySourceFile, Map<String, Set<Integer>> methodLines) {
     this.bySourceFile = bySourceFile;
+    this.methodLines = methodLines;
   }
 
   /**
@@ -166,6 +181,9 @@ public final class JacocoLines {
     String packageName = null;
     // The key of the source file being read, or null outside a source file the caller wants.
     String sourceFile = null;
+    // The key of the source file the class being read was compiled from, or null where the caller
+    // does not want that file or the class records none.
+    String classSourceFile = null;
     while (xml.hasNext()) {
       if (xml.next() != XMLStreamConstants.START_ELEMENT) {
         continue;
@@ -174,6 +192,22 @@ public final class JacocoLines {
         case "package":
           packageName = xml.getAttributeValue(null, "name");
           sourceFile = null;
+          classSourceFile = null;
+          break;
+        case "class":
+          String sourceFileName = xml.getAttributeValue(null, "sourcefilename");
+          classSourceFile =
+              sourceFileName == null ? null : SourceFileKey.of(packageName, sourceFileName);
+          if (classSourceFile != null && !wanted.test(classSourceFile)) {
+            classSourceFile = null;
+          }
+          break;
+        case "method":
+          // JaCoCo leaves the attribute out for a method compiled without line numbers.
+          int firstLine = attribute(xml, "line");
+          if (classSourceFile != null && firstLine > 0) {
+            builder.method(classSourceFile, firstLine);
+          }
           break;
         case "sourcefile":
           String key = SourceFileKey.of(packageName, xml.getAttributeValue(null, "name"));
@@ -204,6 +238,16 @@ public final class JacocoLines {
     return lines == null ? null : lines.get(line);
   }
 
+  /**
+   * Returns whether the line is the first line of a method or a lambda body of the given source
+   * file, as the {@code line} attribute of JaCoCo's {@code <method>} element carries it: the first
+   * line that holds an instruction, which for an empty body is its closing brace.
+   */
+  boolean startsMethod(String sourceFileKey, int line) {
+    Set<Integer> lines = methodLines.get(sourceFileKey);
+    return lines != null && lines.contains(line);
+  }
+
   /** Returns whether any report read here mentions the given package-qualified source path. */
   boolean covers(String sourceFileKey) {
     return bySourceFile.containsKey(sourceFileKey);
@@ -211,17 +255,19 @@ public final class JacocoLines {
 
   @Override
   public boolean equals(Object other) {
-    return other instanceof JacocoLines && bySourceFile.equals(((JacocoLines) other).bySourceFile);
+    return other instanceof JacocoLines
+        && bySourceFile.equals(((JacocoLines) other).bySourceFile)
+        && methodLines.equals(((JacocoLines) other).methodLines);
   }
 
   @Override
   public int hashCode() {
-    return bySourceFile.hashCode();
+    return Objects.hash(bySourceFile, methodLines);
   }
 
   @Override
   public String toString() {
-    return bySourceFile.toString();
+    return bySourceFile + " methods " + methodLines;
   }
 
   private static Counters larger(Counters first, Counters second) {

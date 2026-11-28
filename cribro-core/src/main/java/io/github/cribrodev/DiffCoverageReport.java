@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** How much of a change a test run executed, file by file. */
 final class DiffCoverageReport {
@@ -94,7 +95,10 @@ final class DiffCoverageReport {
   static final class FileCoverage {
     final String path;
 
-    /** Changed lines of this file that emit bytecode, executed or not. */
+    /**
+     * Changed lines of this file that emit bytecode and hold code, as {@link CodeLines#holdsCode}
+     * decides, executed or not.
+     */
     int executableLines;
 
     /** Changed lines of this file the run executed. */
@@ -185,7 +189,10 @@ final class DiffCoverageReport {
     }
   }
 
-  /** The total printed where the change reached no line of this module that emits bytecode. */
+  /**
+   * The total printed where no changed line of this module both emits bytecode and holds code, as
+   * {@link CodeLines#holdsCode} decides.
+   */
   static final String NO_EXECUTABLE_LINES =
       "Total: no changed executable lines under this module's source roots.";
 
@@ -194,7 +201,10 @@ final class DiffCoverageReport {
   /** Changed files under a source root that no report read here mentions. */
   final List<String> notInAnyReport = new ArrayList<>();
 
-  /** Changed files whose changed lines emit no bytecode, such as comments and declarations. */
+  /**
+   * Changed files whose changed lines emit no bytecode, such as comments and declarations, or hold
+   * no code of their own, such as a closing brace.
+   */
   final List<String> nothingExecutable = new ArrayList<>();
 
   /**
@@ -240,6 +250,10 @@ final class DiffCoverageReport {
    * source file and gives no way to tell them apart. Each path is still printed, so that neither
    * changed file leaves the report.
    *
+   * <p>A line that holds no code of its own, as {@link CodeLines#holdsCode} decides from its
+   * branches, from whether JaCoCo reports it as the first line of a method, and from its text,
+   * counts towards no total and is not a row.
+   *
    * @param changed the files in the order the lists that name nothing to do print them, which
    *     {@link ChangedLines#underSourceRoots} orders by path
    * @param sources the working tree the uncovered lines are quoted from
@@ -260,6 +274,11 @@ final class DiffCoverageReport {
         if (counters == null) {
           continue;
         }
+        String source = sources.get(path, number);
+        if (!CodeLines.holdsCode(
+            counters.totalBranches > 0, lines.startsMethod(key, number), source)) {
+          continue;
+        }
         file.executableLines++;
         if (counters.isExecuted()) {
           file.executedLines++;
@@ -269,7 +288,6 @@ final class DiffCoverageReport {
         if (counters.isExecuted() && !counters.hasUntakenBranch()) {
           continue;
         }
-        String source = sources.get(path, number);
         AffectedLine affected =
             new AffectedLine(
                 number,
@@ -336,11 +354,36 @@ final class DiffCoverageReport {
     return measured.stream().mapToInt(file -> file.executableLines).sum();
   }
 
-  /** Returns how many changed lines the run left unexecuted or took a branch of only one way. */
+  /**
+   * Returns how many changed lines the run left uncovered, acknowledged or not: the sum of {@link
+   * #notExecutedLines()} and {@link #untakenBranchLines()}.
+   */
   int uncoveredLines() {
+    return notExecutedLines() + untakenBranchLines();
+  }
+
+  /**
+   * Returns how many changed lines the run did not execute, acknowledged or not, which is the
+   * executable total less the executed one.
+   *
+   * <p>A line nothing ran counts here even where it has branches, since nothing took them either.
+   */
+  int notExecutedLines() {
+    return (int) uncoveredRows().filter(line -> !line.executed()).count();
+  }
+
+  /**
+   * Returns how many changed lines the run executed without taking every branch outcome,
+   * acknowledged or not.
+   */
+  int untakenBranchLines() {
+    return (int) uncoveredRows().filter(AffectedLine::executed).count();
+  }
+
+  /** Returns every uncovered changed line, whether it is work or acknowledged. */
+  private Stream<AffectedLine> uncoveredRows() {
     return measured.stream()
-        .mapToInt(file -> file.affected.size() + file.acknowledged.size())
-        .sum();
+        .flatMap(file -> Stream.concat(file.affected.stream(), file.acknowledged.stream()));
   }
 
   /** Returns how many of the uncovered lines a comment in the source acknowledges. */
@@ -413,12 +456,24 @@ final class DiffCoverageReport {
     appendBranches(out, coveredBranches(), totalBranches());
     out.append('.');
     // Every uncovered line counts here, printed or not: the executed share alone reports a line
-    // whose condition went one way as covered.
+    // whose condition went one way as covered. The two groups split the total, so a reader matches
+    // the not-executed group against the executed share and the other group against the branch
+    // pair. Acknowledged lines are counted in their group like any other, and the closing clause
+    // says how many of the total they are.
+    int uncovered = uncoveredLines();
     out.append("\nUncovered changed code: ")
-        .append(uncoveredLines())
-        .append(uncoveredLines() == 1 ? " line" : " lines");
+        .append(uncovered)
+        .append(uncovered == 1 ? " line" : " lines");
+    if (uncovered > 0) {
+      // Both groups are printed even at zero, so that the line keeps one shape between runs.
+      out.append(" (")
+          .append(notExecutedLines())
+          .append(" not executed, ")
+          .append(untakenBranchLines())
+          .append(" with an untaken branch)");
+    }
     if (acknowledgedLines() > 0) {
-      out.append(" (").append(acknowledgedLines()).append(" acknowledged)");
+      out.append(", ").append(acknowledgedLines()).append(" of them acknowledged");
     }
     return out.toString();
   }

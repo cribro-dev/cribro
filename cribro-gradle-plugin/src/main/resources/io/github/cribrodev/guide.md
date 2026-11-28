@@ -15,28 +15,46 @@ which can differ from the directory: pgjdbc's `pgjdbc/` directory is `:postgresq
 ```text
 Diff coverage against origin/master (95aa87fb8), from :postgresql:test --tests *PgBufferedOutputStreamTest
   a filtered run leaves the rest of the change looking unexecuted
+  ordered by uncovered changed lines, then uncovered branches
 
   pgjdbc/src/main/java/org/postgresql/util/internal/PgBufferedOutputStream.java
     6/7 changed lines executed, 3/4 branches covered
     uncovered changed code:
       167: 1 of 2 branches covered: if (len < 0) {
       168: not executed: throw new IllegalArgumentException("len must be non-negative, got " + len);
+
+Total: 6/7 changed lines executed, 3/4 branches covered.
+Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch)
 ```
 
 Each uncovered line is a test you have not written yet, or a line you can justify leaving untested. The counts reflect
 only the tests that ran: after a run filtered with `--tests`, run the module's whole suite before you treat a line as
 untested. The whole report is in `<module>/build/reports/diff-coverage/test.txt`.
 
-If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It stays
-counted as uncovered and leaves the list of work.
+The `Uncovered changed code` line counts the uncovered changed lines in two groups. A line that no test executed is in
+the first group, whether or not it has branches, so that group is the changed lines the total leaves unexecuted. A line
+that ran and left a branch outcome untaken is in the second.
+
+A changed line that holds only braces, closing parentheses, semicolons, commas, and `else`, such as `}`, `} else {`, or
+`});`, counts towards no total and is not listed. The instruction the compiler puts on such a line belongs to the
+statement it closes, and the lines and branches of that statement show whether it ran. Two kinds of such line are still
+measured: the closing brace of a method or a lambda with an empty body, which holds its only instruction, and a line
+that carries a branch. The block that follows the total leaves out the same lines. The mutation testing report leaves
+them out of its count of changed lines too, and counts such a line where a mutant is on it.
+
+If an uncovered line is unreachable or not worth a test, mark it with `// diff-coverage: ignore -- <reason>`. It leaves
+the list of work and stays in the counts, and the `Uncovered changed code` line ends with how many of the uncovered
+lines are acknowledged:
+`Uncovered changed code: 2 lines (1 not executed, 1 with an untaken branch), 1 of them acknowledged`.
 
 ### Unchanged code the change routes new inputs to
 
 A changed `case` label, a changed condition of an `if` or a loop, and a call on a changed line can send new inputs to
 lines nobody edited: the statements the label falls through to, the branches the condition guards, the body of a method
-of the same file that the call reaches. The block after the total lists those methods and the lines and branches of them
-the run did not cover. The change does not owe them a test, but they now run under conditions the old tests may never
-have set up.
+of the same file that the call reaches. The block after the total lists those methods, each by its name and parameter
+types, such as `helper(int)` or `Builder.build()` for a method of a nested class, and the lines and branches of them the
+run did not cover. The change does not owe them a test, but they now run under conditions the old tests may never have
+set up.
 
 After a run of the whole suite, old tests execute most of that code under the old conditions, so the block ends with
 the `--tests` arguments that run only the test methods the change added or edited. Run those: what is left
@@ -65,6 +83,11 @@ survives marks a changed line whose behavior no test asserts. For each live muta
 - no caller can observe the difference: the mutant is equivalent, so say so in the pull request;
 - you cannot tell: report it as unresolved.
 
+The report opens with the number of mutants and of the changed lines with bytecode that carry one, such as `8 mutants
+on 7 of 24 changed lines`. Mutation testing checks nothing on the other changed lines, whatever their coverage. A
+parameterized test is named once per line, with the invocations that reach it, such as `CoreQuidemTest.test[1-3, 33]`.
+The numbers are the indexes JUnit gives the invocations, the ones a default display name shows in brackets.
+
 `pitestDiff` is not part of `test`, and a surviving mutant never fails the build. It costs one run of the target tests
 plus a partial run per mutant, so narrow `-Pcribro.pitestTargetTests` to the test classes that exercise the change
 (comma-separated, globs allowed). The task is skipped when the branch changed no line in the module's main sources.
@@ -90,7 +113,7 @@ stacked change, pass the parent branch: `-Pcribro.diffBase=<parent>`.
 | `-Pcribro.diffCoverageShowAll` | off | Prints the whole coverage report to the console |
 | `-Pcribro.diffCoverageMaxFiles=<n>`, `-Pcribro.diffCoverageMaxLinesPerFile=<n>`, `-Pcribro.diffCoverageMaxLines=<n>` | `10`, `10`, `50` | How much of the coverage report the console shows |
 | `-Pcribro.pitestTargetTests=<globs>` | every test (`~.*`) | Tests allowed to kill a mutant |
-| `-Pcribro.pitestMutators=<group>` | `DEFAULTS` | PIT mutator group: `DEFAULTS`, `STRONGER`, or `ALL` |
+| `-Pcribro.pitestMutators=<group>` | `{{pitestMutators}}` | PIT mutator group: `DEFAULTS`, `STRONGER`, or `ALL` |
 | `-Pcribro.pitestThreads=<n>` | half the cores | Mutants analyzed in parallel |
 | `-Pcribro.pitestTimeoutConst=<ms>` | `4000` | Time PIT adds to a test's normal run before it calls a mutant a timeout |
 | `-Pcribro.pitestShowAll` | off | Prints the whole mutation report to the console |
@@ -111,8 +134,10 @@ it, and it needs an Arcmutate licence file, `arcmutate-licence.txt`, at the repo
 
 - PIT runs only the tests of the module whose code it mutates. A mutant that only another module's tests kill is
   reported as surviving.
-- PIT splits JVM arguments at commas and whitespace. The task leaves such arguments of the test task out and names them
-  in its output; a test that depends on one may fail under PIT and drop out.
+- PIT cannot pass a JVM argument that contains whitespace, a quote, or a `#`, nor one that leaves a `{` open,
+  nor one with a comma when it has a brace, or when another argument PIT passes has one.
+  The task leaves such arguments of the test task out and names them in its output; a test that depends on one may fail
+  under PIT and drop out.
 - PIT runs JUnit Jupiter tests one at a time, whatever the build sets for parallel execution.
 - PIT runs only the `test` task's tests, not those of other `Test` tasks such as integration tests.
 - Do not run two Gradle builds in the same project at once.

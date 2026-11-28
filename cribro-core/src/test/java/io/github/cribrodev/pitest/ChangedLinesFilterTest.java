@@ -20,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.cribrodev.ChangedLinesFile;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 
 import java.util.List;
@@ -27,7 +30,16 @@ import java.util.Map;
 import java.util.NavigableSet;
 import java.util.ServiceLoader;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LineNumberNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.pitest.bytecode.analysis.ClassTree;
 import org.pitest.classinfo.ClassName;
 import org.pitest.mutationtest.build.InterceptorType;
 import org.pitest.mutationtest.build.MutationInterceptorFactory;
@@ -43,7 +55,10 @@ class ChangedLinesFilterTest {
 
   private static final ChangedLinesFilter FILTER =
       new ChangedLinesFilter(
-          Map.of("com/x/A.java", lines(10, 11), "B.java", lines(5)));
+          Map.of("com/x/A.java", lines(10, 11), "B.java", lines(5)),
+          Map.of("com/x/A.java", "src/com/x/A.java", "B.java", "src/B.java"),
+          List.of(),
+          Path.of("unused"));
 
   private static NavigableSet<Integer> lines(Integer... numbers) {
     return new TreeSet<>(List.of(numbers));
@@ -111,6 +126,150 @@ class ChangedLinesFilterTest {
         System.setProperty(ChangedLinesFile.PITEST_PROPERTY, previous);
       }
     }
+  }
+
+  /** Returns a class compiled from the given file, with the given methods. */
+  private static ClassTree compiled(String name, String sourceFile, MethodNode... methods) {
+    ClassNode node = new ClassNode();
+    node.name = name;
+    node.sourceFile = sourceFile;
+    node.methods.addAll(List.of(methods));
+    return new ClassTree(node);
+  }
+
+  /** Returns a method whose line table records the given lines. */
+  private static MethodNode method(String name, int access, Integer... lines) {
+    MethodNode method = new MethodNode(access, name, "()V", null, null);
+    for (int line : lines) {
+      LabelNode label = new LabelNode();
+      method.instructions.add(label);
+      method.instructions.add(new LineNumberNode(line, label));
+      method.instructions.add(new InsnNode(Opcodes.NOP));
+    }
+    return method;
+  }
+
+  @Test
+  void theLinesWithBytecodeAreTheChangedLinesTheCompilerDidNotGenerate(@TempDir Path dir)
+      throws IOException {
+    Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
+    new ChangedLinesFilter(
+            Map.of("com/x/A.java", lines(10, 12, 13, 14, 15)),
+            Map.of("com/x/A.java", "src/com/x/A.java"),
+            List.of(),
+            withBytecode)
+        .writeLinesWithBytecode(
+            Stream.of(
+                compiled(
+                    "com/x/A",
+                    "A.java",
+                    method("m", Opcodes.ACC_PUBLIC, 10, 11),
+                    method("m", Opcodes.ACC_BRIDGE | Opcodes.ACC_SYNTHETIC, 12),
+                    method("access$000", Opcodes.ACC_STATIC | Opcodes.ACC_SYNTHETIC, 13)),
+                compiled(
+                    "com/x/A$Inner",
+                    "A.java",
+                    method("lambda$m$0", Opcodes.ACC_PRIVATE | Opcodes.ACC_SYNTHETIC, 14)),
+                compiled("com/y/A", "A.java", method("m", Opcodes.ACC_PUBLIC, 15))));
+
+    assertEquals(
+        Map.of("com/x/A.java", lines(10, 14)),
+        ChangedLinesFile.read(withBytecode),
+        "lines with bytecode");
+    assertEquals(
+        Map.of("com/x/A.java", "src/com/x/A.java"), ChangedLinesFile.readPaths(withBytecode));
+  }
+
+  @Test
+  void aClassInTheDefaultPackageRecordsItsLinesUnderItsFileName(@TempDir Path dir)
+      throws IOException {
+    Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
+    new ChangedLinesFilter(
+            Map.of("B.java", lines(5)), Map.of("B.java", "src/B.java"), List.of(), withBytecode)
+        .writeLinesWithBytecode(
+            Stream.of(compiled("B", "B.java", method("m", Opcodes.ACC_PUBLIC, 5))));
+
+    assertEquals(Map.of("B.java", lines(5)), ChangedLinesFile.read(withBytecode));
+  }
+
+  /** Writes a file under the directory and returns the directory. */
+  private static Path write(Path dir, String path, String text) throws IOException {
+    Path file = dir.resolve(path);
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, text);
+    return dir;
+  }
+
+  @Test
+  void aLineOfBracesAndElseIsLeftOutUnlessItStartsAMethod(@TempDir Path dir) throws IOException {
+    write(
+        dir,
+        "lib/src/main/java/com/x/A.java",
+        """
+        package com.x;
+        class A {
+          void f(boolean b) {
+            if (b) {
+              x();
+            } else {
+              y();
+            }
+          }
+          void g() {
+          }
+        }
+        """);
+    Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
+    new ChangedLinesFilter(
+            Map.of("com/x/A.java", lines(4, 5, 6, 7, 8, 9, 10, 11)),
+            Map.of("com/x/A.java", "lib/src/main/java/com/x/A.java"),
+            List.of(dir.resolve("other/src/main/java"), dir.resolve("lib/src/main/java")),
+            withBytecode)
+        .writeLinesWithBytecode(
+            Stream.of(
+                compiled(
+                    "com/x/A",
+                    "A.java",
+                    method("f", Opcodes.ACC_PUBLIC, 4, 5, 6, 7, 9),
+                    method("g", Opcodes.ACC_PUBLIC, 11))));
+
+    assertEquals(Map.of("com/x/A.java", lines(4, 5, 7, 11)), ChangedLinesFile.read(withBytecode));
+  }
+
+  /**
+   * The root under {@code other} holds a file of the same name whose line 4 holds code, so reading
+   * it would keep line 4.
+   */
+  @Test
+  void theTextIsReadFromTheChangedFileWhereverItsDirectoryIs(@TempDir Path dir)
+      throws IOException {
+    write(dir, "other/src/main/kotlin/A.kt", "package com.x\nfun f() {\n  x()\n  y()\n");
+    write(dir, "lib/src/main/kotlin/A.kt", "package com.x\nfun f() {\n  x()\n}\n");
+    Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
+    new ChangedLinesFilter(
+            Map.of("com/x/A.kt", lines(3, 4)),
+            Map.of("com/x/A.kt", "lib/src/main/kotlin/A.kt"),
+            List.of(dir.resolve("other/src/main/kotlin"), dir.resolve("lib/src/main/kotlin")),
+            withBytecode)
+        .writeLinesWithBytecode(
+            Stream.of(compiled("com/x/AKt", "A.kt", method("f", Opcodes.ACC_PUBLIC, 3, 4))));
+
+    assertEquals(Map.of("com/x/A.kt", lines(3)), ChangedLinesFile.read(withBytecode));
+  }
+
+  @Test
+  void aChangedFileWithNoLineWithBytecodeLeavesTheFileEmpty(@TempDir Path dir)
+      throws IOException {
+    Path withBytecode = dir.resolve("changed-lines-with-bytecode.txt");
+    new ChangedLinesFilter(
+            Map.of("com/x/A.java", lines(3)),
+            Map.of("com/x/A.java", "src/com/x/A.java"),
+            List.of(),
+            withBytecode)
+        .writeLinesWithBytecode(
+            Stream.of(compiled("com/x/A", "A.java", method("m", Opcodes.ACC_PUBLIC, 4))));
+
+    assertEquals(Map.of(), ChangedLinesFile.read(withBytecode));
   }
 
   @Test
